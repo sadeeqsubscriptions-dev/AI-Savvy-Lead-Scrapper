@@ -2,7 +2,7 @@
  * Database types for the AI Savvy Leads Scrapper schema.
  *
  * Regenerate after changing a migration:
- *   supabase gen types typescript --project-id efugibjzetdrmwqylcaj > lib/supabase/types.ts
+ *   supabase gen types typescript --project-id jgxumvzginmhckeurxiy > lib/supabase/types.ts
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]

@@ -32,7 +32,7 @@ The schema lives in `supabase/migrations/`. Apply it one of two ways.
 
 ```bash
 npx supabase login                                  # account that owns the project
-npx supabase link --project-ref efugibjzetdrmwqylcaj
+npx supabase link --project-ref jgxumvzginmhckeurxiy
 npx supabase db push
 ```
 
@@ -42,16 +42,17 @@ management API and only needs the database password:
 
 ```bash
 # Session-mode pooler. The direct host (db.<ref>.supabase.co) is IPv6-only.
-# Percent-encode the password: @ becomes %40.
+# Percent-encode the password: @ becomes %40. Get the exact host/region from
+# Project Settings → Database → Connection string on your project's dashboard.
 npx supabase db push --db-url \
-  "postgresql://postgres.efugibjzetdrmwqylcaj:<PASSWORD>@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres"
+  "postgresql://postgres.jgxumvzginmhckeurxiy:<PASSWORD>@<REGION>.pooler.supabase.com:5432/postgres"
 ```
 
 The same `--db-url` works with `supabase db query -f file.sql` for one-off SQL.
 
 **Option B — SQL Editor (no CLI access needed):**
 
-Open the [SQL Editor](https://supabase.com/dashboard/project/efugibjzetdrmwqylcaj/sql/new),
+Open the [SQL Editor](https://supabase.com/dashboard/project/jgxumvzginmhckeurxiy/sql/new),
 paste the contents of `supabase/schema.sql`, and run it once. That file is just the
 migrations concatenated in order.
 
