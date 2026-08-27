@@ -1,0 +1,9 @@
+overrides:
+  hono: 4.12.25
+
+# msw ships an install script we don't need; skipping it keeps installs clean.
+ignoredBuiltDependencies:
+  - msw
+
+allowBuilds:
+  esbuild: set this to true or false
