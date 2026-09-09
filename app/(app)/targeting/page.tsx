@@ -6,8 +6,9 @@ import { TargetingWorkspace } from '@/components/targeting/targeting-workspace'
 export const metadata: Metadata = { title: 'Targeting' }
 
 // A brief involves several web searches before Claude writes the final
-// response — well beyond a default serverless timeout.
-export const maxDuration = 120
+// response — well beyond a default serverless timeout. 300s is the max
+// Vercel allows on Hobby/Pro with Fluid Compute.
+export const maxDuration = 300
 
 export default async function TargetingPage({
   searchParams,

@@ -7,6 +7,11 @@ import { isAdmin, requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import type { LeadAiBrief } from '@/lib/supabase/types'
 
+// Server actions run as their own function on Vercel, so this needs its own
+// maxDuration — inheriting the calling page's isn't reliable. 300s is the max
+// Vercel allows on Hobby/Pro with Fluid Compute.
+export const maxDuration = 300
+
 const MODEL = 'claude-opus-5'
 const MAX_SEARCHES = 5
 
