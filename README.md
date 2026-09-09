@@ -89,7 +89,8 @@ same screen has a reset button.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes      | Publishable key, safe for the browser              |
 | `NEXT_PUBLIC_SITE_URL`          | yes      | Base URL used to build auth email redirect links   |
 | `SUPABASE_SERVICE_ROLE_KEY`     | no       | Only for background jobs that run outside a session |
-| `GOOGLE_MAPS_API_KEY`           | no       | Enables the Google Places source                   |
+| `GOOGLE_MAPS_API_KEY`           | no       | Enables the Google Places source (needs Google Cloud billing) |
+| `SERPAPI_KEY`                   | no       | Enables the SerpApi source — same idea, no billing account needed |
 | `FIRECRAWL_API_KEY`             | no       | Enables the Firecrawl source                       |
 | `FIRECRAWL_API_URL`             | no       | Point Firecrawl at a self-hosted instance          |
 | `CRAWL4AI_URL`                  | no       | Enables the Crawl4AI source                        |

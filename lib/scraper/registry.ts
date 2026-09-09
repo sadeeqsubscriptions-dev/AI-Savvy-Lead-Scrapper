@@ -4,6 +4,7 @@ import { crawl4aiProvider } from './providers/crawl4ai'
 import { crawleeProvider } from './providers/crawlee'
 import { firecrawlProvider } from './providers/firecrawl'
 import { googleMapsProvider } from './providers/google-maps'
+import { serpapiProvider } from './providers/serpapi'
 import { sampleProvider } from './providers/sample'
 import { CUSTOM_PROVIDER_READY, customProvider } from './providers/custom'
 import type { ScrapeProvider } from './types'
@@ -11,8 +12,9 @@ import type { ScrapeProvider } from './types'
 // Ordered roughly by how useful each one is as a starting point.
 const providers: ScrapeProvider[] = [
   sampleProvider,
-  apolloProvider,
   firecrawlProvider,
+  serpapiProvider,
+  apolloProvider,
   googleMapsProvider,
   crawleeProvider,
   crawl4aiProvider,
