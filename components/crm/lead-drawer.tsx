@@ -98,6 +98,14 @@ export function LeadDrawer({
 
   if (!lead) return null
 
+  const sourceUrl =
+    typeof lead.metadata === 'object' &&
+    lead.metadata !== null &&
+    'source_url' in lead.metadata &&
+    typeof (lead.metadata as { source_url?: unknown }).source_url === 'string'
+      ? (lead.metadata as { source_url: string }).source_url
+      : null
+
   const changeStatus = (status: LeadStatus) => {
     startTransition(async () => {
       const result = await updateLeadStatus(lead.id, status)
@@ -240,6 +248,22 @@ export function LeadDrawer({
               <dt className="text-muted-foreground">Source</dt>
               <dd>{lead.source}</dd>
             </div>
+            {sourceUrl ? (
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-muted-foreground">Scraped from</dt>
+                <dd className="min-w-0 truncate text-right">
+                  <a
+                    href={sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                    title={sourceUrl}
+                  >
+                    View original page
+                  </a>
+                </dd>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted-foreground">Owner</dt>
               <dd>{lead.owner?.full_name ?? lead.owner?.email ?? 'Unassigned'}</dd>

@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
-import { Check, Download, Loader2, Sparkles, X } from 'lucide-react'
+import { Check, Download, ExternalLink, Loader2, Sparkles, X } from 'lucide-react'
 import { cancelScrapeJob, importJobRecords, rejectRecords } from '@/lib/actions/scraper'
 import { createClient } from '@/lib/supabase/client'
 import { formatNumber } from '@/lib/format'
@@ -245,6 +245,7 @@ export function JobMonitor({ jobId, onClear }: { jobId: string; onClear: () => v
                   <th className="px-3 py-2.5 font-medium">Email</th>
                   <th className="px-3 py-2.5 font-medium">Phone</th>
                   <th className="px-3 py-2.5 font-medium">Score</th>
+                  <th className="px-3 py-2.5 font-medium">Source</th>
                   <th className="px-3 py-2.5 font-medium">State</th>
                 </tr>
               </thead>
@@ -276,6 +277,22 @@ export function JobMonitor({ jobId, onClear }: { jobId: string; onClear: () => v
                     </td>
                     <td className="px-3 py-2.5">
                       <ScoreBadge score={record.score} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {record.source_url ? (
+                        <a
+                          href={record.source_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          title={record.source_url}
+                        >
+                          View page
+                          <ExternalLink className="size-3" />
+                        </a>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5">
                       {record.status === 'imported' ? (
