@@ -1,3 +1,8 @@
+'use client'
+
+import * as React from 'react'
+import { Select as SelectPrimitive } from '@base-ui/react/select'
+import { Check, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const controlBase =
@@ -11,17 +16,89 @@ export function Textarea({ className, ...props }: React.ComponentProps<'textarea
   return <textarea className={cn(controlBase, 'min-h-24 resize-y py-2.5 leading-6', className)} {...props} />
 }
 
-export function Select({ className, ...props }: React.ComponentProps<'select'>) {
+type OptionElement = React.ReactElement<
+  React.OptionHTMLAttributes<HTMLOptionElement> & { children?: React.ReactNode }
+>
+
+/**
+ * Styled drop-in replacement for a native `<select>` — same `<option>` children
+ * and `event.target.value`-shaped `onChange` API, so every existing call site
+ * works unchanged. The popup is a real themed panel (Base UI) instead of the
+ * browser's native, unstyleable option list.
+ */
+export function Select({
+  className,
+  children,
+  value,
+  defaultValue,
+  onChange,
+  name,
+  id,
+  disabled,
+  required,
+  'aria-label': ariaLabel,
+}: React.ComponentProps<'select'>) {
+  const options = React.useMemo(
+    () =>
+      React.Children.toArray(children).filter(
+        (child): child is OptionElement => React.isValidElement(child) && child.type === 'option',
+      ),
+    [children],
+  )
+
+  const handleValueChange = (nextValue: string | null) => {
+    onChange?.({
+      target: { value: nextValue ?? '', name },
+    } as unknown as React.ChangeEvent<HTMLSelectElement>)
+  }
+
   return (
-    <select
-      className={cn(
-        controlBase,
-        'h-10 appearance-none bg-[length:1rem] bg-[right_0.65rem_center] bg-no-repeat pr-9',
-        '[background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2394a3b8\' stroke-width=\'2\' stroke-linecap=\'round\'%3E%3Cpath d=\'m6 9 6 6 6-6\'/%3E%3C/svg%3E")]',
-        className,
-      )}
-      {...props}
-    />
+    <SelectPrimitive.Root
+      items={options.map((option) => ({
+        value: String(option.props.value ?? ''),
+        label: option.props.children,
+      }))}
+      value={value != null ? String(value) : undefined}
+      defaultValue={defaultValue != null ? String(defaultValue) : undefined}
+      onValueChange={handleValueChange}
+      name={name}
+      id={id}
+      disabled={disabled}
+      required={required}
+    >
+      <SelectPrimitive.Trigger
+        aria-label={ariaLabel}
+        className={cn(
+          controlBase,
+          'flex h-10 items-center justify-between gap-2 data-[popup-open]:border-ring data-[popup-open]:ring-2 data-[popup-open]:ring-ring/25',
+          className,
+        )}
+      >
+        <SelectPrimitive.Value className="truncate text-left" />
+        <SelectPrimitive.Icon className="shrink-0 text-muted-foreground">
+          <ChevronDown className="size-4" />
+        </SelectPrimitive.Icon>
+      </SelectPrimitive.Trigger>
+      <SelectPrimitive.Portal>
+        <SelectPrimitive.Positioner className="z-[120] outline-none" sideOffset={6}>
+          <SelectPrimitive.Popup className="max-h-72 min-w-[var(--anchor-width)] overflow-auto rounded-lg border border-border bg-popover p-1 text-sm text-popover-foreground shadow-xl shadow-black/20 outline-none">
+            {options.map((option) => (
+              <SelectPrimitive.Item
+                key={String(option.props.value)}
+                value={String(option.props.value ?? '')}
+                disabled={option.props.disabled}
+                className="flex cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 py-2 outline-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 data-[highlighted]:bg-secondary"
+              >
+                <SelectPrimitive.ItemText>{option.props.children}</SelectPrimitive.ItemText>
+                <SelectPrimitive.ItemIndicator className="text-primary">
+                  <Check className="size-3.5" />
+                </SelectPrimitive.ItemIndicator>
+              </SelectPrimitive.Item>
+            ))}
+          </SelectPrimitive.Popup>
+        </SelectPrimitive.Positioner>
+      </SelectPrimitive.Portal>
+    </SelectPrimitive.Root>
   )
 }
 
