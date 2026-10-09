@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Crosshair } from 'lucide-react'
+import { currentBrief } from '@/lib/ai/brief-shape'
 import type { LeadWithOwner } from '@/lib/queries'
 import { formatCurrency, formatRelative } from '@/lib/format'
 import { Avatar } from '@/components/ui/avatar'
@@ -30,7 +31,7 @@ export function TargetingWorkspace({
       <SectionHeading
         eyebrow="Sales enablement"
         title={`${activeRepName === 'You' ? 'Your' : `${activeRepName}'s`} targeting queue`}
-        description="Every lead assigned here, ready for Claude to research and script your approach before you reach out."
+        description="Every lead assigned here. Claude writes a short script for each: who they are, where to hit them, and which AI Savvy service to offer."
         action={
           members.length > 0 ? (
             <Select
@@ -90,7 +91,7 @@ export function TargetingWorkspace({
                 </div>
 
                 <p className="mt-3 text-[11px] text-muted-foreground">
-                  {lead.ai_brief
+                  {currentBrief(lead.ai_brief)
                     ? `Brief generated ${formatRelative(lead.ai_brief_generated_at!)}`
                     : 'No brief generated yet'}
                 </p>

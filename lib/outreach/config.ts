@@ -58,7 +58,7 @@ export const FOLLOW_UP_DELAYS_DAYS = [3, 5]
 export const TOTAL_STEPS = FOLLOW_UP_DELAYS_DAYS.length + 1
 
 /** How many leads one "Send to all" click handles, so the request fits the 300s limit. */
-export const BATCH_SIZE = 5
+export const BATCH_SIZE = 3
 
 export function senderConfig() {
   return {

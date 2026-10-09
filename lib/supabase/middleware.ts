@@ -2,8 +2,18 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import type { Database } from './types'
 
-// The outreach cron has no session; it authenticates with CRON_SECRET instead.
-const PUBLIC_ROUTES = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/auth', '/api/outreach/cron']
+// Machine-to-machine routes have no session: the outreach cron checks
+// CRON_SECRET, and Twilio's voice webhooks are verified by signature.
+const PUBLIC_ROUTES = [
+  '/',
+  '/login',
+  '/signup',
+  '/forgot-password',
+  '/reset-password',
+  '/auth',
+  '/api/outreach/cron',
+  '/api/voice',
+]
 const AUTH_ROUTES = ['/login', '/signup', '/forgot-password']
 
 function isPublic(pathname: string) {

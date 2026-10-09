@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Lead, OutreachThread } from '@/lib/supabase/types'
+import { ensureBrief } from '@/lib/ai/brief'
 import { composeEmail, signature, type DraftEmail, type PriorEmail } from './compose'
 import { FOLLOW_UP_DELAYS_DAYS, TOTAL_STEPS, senderConfig } from './config'
 import { ineligibleReason } from './eligibility'
@@ -83,7 +84,9 @@ export async function previewOutreach(
   if (!lead) return { ok: false, error: 'Lead not found.' }
   if (!lead.email) return { ok: false, error: `${lead.full_name} has no email address.` }
 
-  const draft = await composeEmail(lead, 0, [], { force })
+  // Same brief the Targeting page shows, so the email pitches the same offer.
+  const brief = await ensureBrief(supabase, lead, null)
+  const draft = await composeEmail(lead, 0, [], { force, brief: brief.ok ? brief.brief : null })
   if (!draft.ok && draft.notAFit) await markNotAFit(supabase, lead, draft.notAFit)
   return draft
 }
@@ -142,7 +145,8 @@ export async function startOutreach(
   if (reviewed) {
     draft = { ok: true, email: { subject: reviewed.subject.trim(), body: reviewed.body.trim() } }
   } else {
-    const written = await composeEmail(lead, 0, [], { force })
+    const brief = await ensureBrief(supabase, lead, userId)
+    const written = await composeEmail(lead, 0, [], { force, brief: brief.ok ? brief.brief : null })
     if (!written.ok) {
       if (written.notAFit) await markNotAFit(supabase, lead, written.notAFit)
       return release(written.error)

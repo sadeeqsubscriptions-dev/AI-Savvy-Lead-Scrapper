@@ -1,8 +1,9 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState, useTransition } from 'react'
-import { ArrowDownLeft, ArrowUpRight, CircleStop, ExternalLink, Reply, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, CircleStop, ExternalLink, PhoneCall, Reply, X } from 'lucide-react'
 import { replyOutreach, stopOutreach } from '@/lib/actions/outreach'
 import type { OutreachLead, OutreachThreadWithMessages } from '@/lib/queries'
 import { formatDateTime, formatRelative } from '@/lib/format'
@@ -10,7 +11,7 @@ import type { OutreachStatus } from '@/lib/supabase/types'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/field'
 import { Drawer } from '@/components/ui/modal'
 import { Spinner } from '@/components/ui/progress'
@@ -131,6 +132,12 @@ export function OutreachDrawer({
             <ExternalLink className="size-3.5" />
             Open mailbox
           </a>
+          {lead?.phone ? (
+            <Link href={`/dialer?lead=${lead.id}`} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+              <PhoneCall className="size-3.5" />
+              Call them
+            </Link>
+          ) : null}
           {canSend && thread.status === 'active' ? (
             <Button variant="outline" size="sm" onClick={stop} disabled={pending}>
               <CircleStop className="size-3.5" />

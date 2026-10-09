@@ -13,6 +13,7 @@ import {
   Mail,
   Menu,
   Moon,
+  Phone,
   Settings,
   Sun,
   Users,
@@ -34,6 +35,7 @@ const workspaceNav = [
   { href: '/crm', label: 'CRM', icon: Database },
   { href: '/targeting', label: 'Targeting', icon: Crosshair },
   { href: '/outreach', label: 'Outreach', icon: Mail },
+  { href: '/dialer', label: 'Dialer', icon: Phone },
   { href: '/scraper', label: 'Lead scraper', icon: FileSearch },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },
 ]

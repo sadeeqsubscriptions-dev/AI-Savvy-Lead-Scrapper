@@ -1,14 +1,15 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
-import { Building2, Globe, Mail, MapPin, Phone, RefreshCw, Send, ShieldAlert, Sparkles, X } from 'lucide-react'
+import { Building2, Globe, Mail, MapPin, Phone, PhoneCall, RefreshCw, Send, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { previewOutreachEmail, sendOutreach } from '@/lib/actions/outreach'
 import type { DraftEmail } from '@/lib/outreach/compose'
 import type { OutreachLead } from '@/lib/queries'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge, ScoreBadge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/field'
 import { Drawer } from '@/components/ui/modal'
 import { Spinner } from '@/components/ui/progress'
@@ -140,6 +141,13 @@ export function LeadEmailDrawer({
           </div>
         </dl>
 
+        {lead.phone ? (
+          <Link href={`/dialer?lead=${lead.id}`} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+            <PhoneCall className="size-3.5" />
+            Call instead
+          </Link>
+        ) : null}
+
         {warning ? (
           <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/[0.06] p-3 text-xs leading-5">
             <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-warning" />
@@ -156,9 +164,8 @@ export function LeadEmailDrawer({
               <Spinner className="size-5 text-primary" />
               <p className="text-sm font-medium">Writing the email…</p>
               <p className="max-w-xs text-xs text-muted-foreground">
-                {lead.website
-                  ? `Claude is reading ${lead.website.replace(/^https?:\/\//, '')} to find the right angle.`
-                  : 'Claude is picking the service that fits them best.'}
+                Claude researches {lead.company ?? lead.full_name}, writes the sales brief (the same one
+                Targeting shows), then the email. Up to a minute.
               </p>
             </div>
           ) : draft ? (
@@ -221,8 +228,8 @@ export function LeadEmailDrawer({
               </span>
               <p className="text-sm font-medium">No email written yet</p>
               <p className="max-w-xs text-xs leading-5 text-muted-foreground">
-                Claude reads their website, picks the AI Savvy service they most need, and drafts a personal email asking
-                for a 15-minute call. You can edit it before sending.
+                Claude researches them, picks the AI Savvy service they most need (same as their Targeting script), and
+                drafts a personal email asking for a 15-minute call. You can edit it before sending.
               </p>
               {canWrite ? (
                 <Button variant={warning ? 'outline' : 'brand'} size="sm" onClick={() => write(Boolean(warning))}>

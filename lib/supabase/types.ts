@@ -94,12 +94,21 @@ export type ScrapeJob = Timestamps & {
   completed_at: string | null
 }
 
+/**
+ * Claude's short sales script for a lead (v2). Briefs saved before v2 have a
+ * different shape; read them through `currentBrief()` in lib/ai/brief.ts.
+ */
 export type LeadAiBrief = {
+  version: 2
+  /** Two or three lines on who they are. */
   summary: string
-  company_context: string
-  talking_points: string[]
+  /** Where to hit them: the problems AI Savvy can solve for this business. */
+  pain_points: string[]
+  /** The one AI Savvy service to lead with, and how to say it. */
+  offer: { service: string; pitch: string }
+  /** First line to say on a call. */
+  opener: string
   objections: { objection: string; response: string }[]
-  closing_strategy: string
   sources: { title: string; url: string }[]
   generated_by: string | null
   model: string
@@ -211,6 +220,34 @@ export type OutreachMessage = {
   from_email: string
   to_email: string
   sent_at: string
+  created_at: string
+}
+
+export type CallStatus = 'dialing' | 'in_progress' | 'completed' | 'failed'
+
+export type Call = {
+  id: string
+  org_id: string
+  lead_id: string | null
+  user_id: string | null
+  to_number: string
+  status: CallStatus
+  twilio_call_sid: string | null
+  started_at: string
+  ended_at: string | null
+  duration_seconds: number | null
+  summary: string | null
+  created_at: string
+}
+
+export type CallEvent = {
+  id: string
+  org_id: string
+  call_id: string
+  kind: 'transcript' | 'suggestion'
+  speaker: 'rep' | 'lead' | null
+  text: string
+  payload: Json
   created_at: string
 }
 
@@ -351,6 +388,20 @@ export type Database = {
         OutreachMessage,
         Defaulted<OutreachMessage, 'id' | 'step' | 'subject' | 'body' | 'in_reply_to' | 'sent_at' | 'created_at'>,
         Partial<OutreachMessage>
+      >
+      calls: Table<
+        Call,
+        Defaulted<
+          Call,
+          | 'id' | 'lead_id' | 'user_id' | 'status' | 'twilio_call_sid' | 'started_at'
+          | 'ended_at' | 'duration_seconds' | 'summary' | 'created_at'
+        >,
+        Partial<Call>
+      >
+      call_events: Table<
+        CallEvent,
+        Defaulted<CallEvent, 'id' | 'speaker' | 'payload' | 'created_at'>,
+        Partial<CallEvent>
       >
       notifications: Table<
         Notification,
