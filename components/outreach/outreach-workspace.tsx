@@ -30,7 +30,7 @@ import { toast } from '@/components/ui/toaster'
 import { LeadEmailDrawer } from './lead-email-drawer'
 import { OutreachDrawer, outreachStatusLabel, outreachStatusTone } from './outreach-drawer'
 
-type Tab = 'ready' | 'active' | 'replied' | 'done' | 'skipped'
+type Tab = 'ready' | 'research' | 'active' | 'replied' | 'done' | 'skipped'
 
 export function OutreachWorkspace({
   leads,
@@ -64,7 +64,10 @@ export function OutreachWorkspace({
   const contacted = useMemo(() => new Set(threads.map((thread) => thread.lead_id)), [threads])
   const uncontacted = leads.filter((lead) => !contacted.has(lead.id))
   const flags = useMemo(() => new Map(leads.map((lead) => [lead.id, ineligibleReason(lead)])), [leads])
-  const ready = uncontacted.filter((lead) => !flags.get(lead.id))
+  // Researched in Targeting = ready to email; the rest wait for research.
+  const eligible = uncontacted.filter((lead) => !flags.get(lead.id))
+  const ready = eligible.filter((lead) => lead.researched)
+  const needsResearch = eligible.filter((lead) => !lead.researched)
   const skipped = uncontacted.filter((lead) => flags.get(lead.id))
 
   const groups = {
@@ -151,21 +154,23 @@ export function OutreachWorkspace({
 
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: 'ready', label: 'Ready', count: ready.length },
+    { key: 'research', label: 'Needs research', count: needsResearch.length },
     { key: 'active', label: 'In sequence', count: groups.active.length },
     { key: 'replied', label: 'Replied', count: groups.replied.length },
     { key: 'done', label: 'Finished', count: groups.done.length },
     { key: 'skipped', label: 'Not a fit', count: skipped.length },
   ]
 
-  const threadRows = tab === 'ready' || tab === 'skipped' ? [] : groups[tab]
-  const leadRows = tab === 'ready' ? ready : skipped
+  const leadTab = tab === 'ready' || tab === 'research' || tab === 'skipped'
+  const threadRows = leadTab ? [] : groups[tab]
+  const leadRows = tab === 'ready' ? ready : tab === 'research' ? needsResearch : skipped
 
   return (
     <div className="mx-auto max-w-[1200px] space-y-5">
       <SectionHeading
         eyebrow="Cold outreach"
         title="AI email outreach"
-        description={`Claude writes a personal email pitching AI Savvy to each lead, sends it from your inbox, and follows up ${totalSteps - 1} times if they don't reply. Replies show up here automatically.`}
+        description={`Leads researched in Targeting land in Ready. Generate the email from their script, send it from your inbox, and Claude follows up ${totalSteps - 1} times if they don't reply. Replies show up here automatically.`}
         action={
           canEmail ? (
             <>
@@ -238,15 +243,19 @@ export function OutreachWorkspace({
           ))}
         </div>
 
-        {tab === 'ready' || tab === 'skipped' ? (
+        {leadTab ? (
           leadRows.length === 0 ? (
             <EmptyState
-              icon={tab === 'ready' ? Users : Ban}
-              title={tab === 'ready' ? 'No leads waiting' : 'Nothing screened out'}
+              icon={tab === 'skipped' ? Ban : Users}
+              title={
+                tab === 'ready' ? 'Nothing researched yet' : tab === 'research' ? 'Everyone is researched' : 'Nothing screened out'
+              }
               description={
                 tab === 'ready'
-                  ? 'Leads with an email address appear here after you scrape or add them. Everyone with an email has already been contacted.'
-                  : 'Government offices, article titles and department inboxes land here instead of getting emailed.'
+                  ? 'Leads appear here once Claude has written their sales script in Targeting.'
+                  : tab === 'research'
+                    ? 'Every eligible lead with an email has a sales script.'
+                    : 'Government offices, article titles and department inboxes land here instead of getting emailed.'
               }
             />
           ) : (
@@ -254,6 +263,10 @@ export function OutreachWorkspace({
               {tab === 'skipped' ? (
                 <li className="bg-secondary/30 px-4 py-2.5 text-xs text-muted-foreground">
                   These won&apos;t be emailed automatically. Open one to see why, or write an email anyway.
+                </li>
+              ) : tab === 'research' ? (
+                <li className="bg-secondary/30 px-4 py-2.5 text-xs text-muted-foreground">
+                  Research these in Targeting first, or open one and generate the email: Claude researches it on the way.
                 </li>
               ) : null}
               {leadRows.map((lead) => (

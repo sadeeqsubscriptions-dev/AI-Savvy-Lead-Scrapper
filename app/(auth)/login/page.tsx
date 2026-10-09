@@ -1,7 +1,5 @@
-import Link from 'next/link'
 import type { Metadata } from 'next'
 import { LoginForm } from './login-form'
-import { APP_NAME } from '@/lib/constants'
 
 export const metadata: Metadata = { title: 'Sign in' }
 
@@ -20,13 +18,6 @@ export default async function LoginPage({
       </p>
 
       <LoginForm next={next} linkError={error} />
-
-      <p className="mt-6 text-sm text-muted-foreground">
-        New to {APP_NAME}?{' '}
-        <Link href="/signup" className="font-medium text-primary hover:underline">
-          Create an account
-        </Link>
-      </p>
     </>
   )
 }

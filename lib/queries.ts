@@ -1,3 +1,4 @@
+import { currentBrief } from '@/lib/ai/brief-shape'
 import { createClient } from '@/lib/supabase/server'
 import { PAGE_SIZE } from '@/lib/constants'
 import type {
@@ -336,7 +337,10 @@ export type OutreachLead = Pick<
   Lead,
   | 'id' | 'full_name' | 'company' | 'title' | 'email' | 'industry' | 'score' | 'status'
   | 'source' | 'created_at' | 'website' | 'phone' | 'location' | 'city' | 'country' | 'metadata'
->
+> & {
+  /** Has a current sales script from Targeting. */
+  researched: boolean
+}
 export type OutreachThreadWithMessages = OutreachThread & { messages: OutreachMessage[] }
 
 /** Every lead with an email address, plus each outreach thread and its messages. */
@@ -347,7 +351,7 @@ export async function getOutreachBoard(orgId: string) {
     supabase
       .from('leads')
       .select(
-        'id, full_name, company, title, email, industry, score, status, source, created_at, website, phone, location, city, country, metadata',
+        'id, full_name, company, title, email, industry, score, status, source, created_at, website, phone, location, city, country, metadata, ai_brief',
       )
       .eq('org_id', orgId)
       .not('email', 'is', null)
@@ -366,5 +370,10 @@ export async function getOutreachBoard(orgId: string) {
     messages: [...thread.messages].sort((a, b) => a.sent_at.localeCompare(b.sent_at)),
   }))
 
-  return { leads: (leads as OutreachLead[] | null) ?? [], threads: withMessages }
+  // Only whether a script exists goes to the browser, not the script itself.
+  const board = ((leads as (Omit<OutreachLead, 'researched'> & Pick<Lead, 'ai_brief'>)[] | null) ?? []).map(
+    ({ ai_brief, ...lead }) => ({ ...lead, researched: currentBrief(ai_brief) !== null }),
+  )
+
+  return { leads: board, threads: withMessages }
 }

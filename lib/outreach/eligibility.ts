@@ -3,7 +3,7 @@ import type { Json } from '@/lib/supabase/types'
 /**
  * Cheap, deterministic screening before any Claude credits are spent. Scrapers
  * pick up government offices, article titles and department inboxes that no
- * one reads for sales email; those go to "Not a fit" instead of "Ready".
+ * one reads for sales email; those go to 'Not a fit' instead of 'Ready'.
  * Claude makes the final call on anything that passes (see compose.ts).
  */
 
@@ -17,6 +17,41 @@ const PUBLIC_SECTOR = [
   /\.state\.[a-z]{2}\.us$/,
   /\.(co|city|county|ci)\.[a-z-]+\.[a-z]{2}\.us$/,
 ]
+
+// Names that mean a public body rather than a business that buys services.
+const PUBLIC_SECTOR_NAME =
+  /\b(county|city of|town of|township|village of|borough of|department of|dept\.? of|state of|ministry|municipal|government|federal|commonwealth|public schools?|school district|school board|board of education|university|college|police|sheriff|fire (department|rescue)|courthouse|clerk of court|city hall|chamber of commerce|transit authority|port authority|housing authority|medicaid|medicare|social security)\b/i
+
+function hostOf(value: string | null | undefined) {
+  if (!value) return null
+  try {
+    return new URL(value.includes('://') ? value : `https://${value}`).hostname.replace(/^www\./, '').toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Government, military and school organisations, judged from the email
+ * domain, website domain and name. Used by the scraper (to drop them before
+ * review) and by outreach (to keep them out of 'Ready').
+ */
+export function publicSectorReason(lead: {
+  email?: string | null
+  website?: string | null
+  company?: string | null
+  full_name?: string | null
+}): string | null {
+  const domains = [lead.email?.split('@')[1]?.trim().toLowerCase(), hostOf(lead.website)].filter(
+    (domain): domain is string => Boolean(domain),
+  )
+  if (domains.some((domain) => PUBLIC_SECTOR.some((pattern) => pattern.test(domain)))) {
+    return 'Government or school address — not a business that buys AI services.'
+  }
+  const name = [lead.company, lead.full_name].filter(Boolean).join(' ')
+  if (PUBLIC_SECTOR_NAME.test(name)) return 'Looks like a government body or school, not a business.'
+  return null
+}
 
 const DEAD_INBOXES =
   /^(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|abuse|privacy|legal|compliance|appeals|complaints|grievances?|careers|jobs|hr|recruiting|press|media|webmaster|security|dpo|gdpr|unsubscribe)([._-]|$)/
@@ -41,11 +76,10 @@ export function ineligibleReason(lead: EligibilityLead): string | null {
   if (!email.includes('@')) return 'No email address.'
 
   const [local, domain] = email.split('@')
-  if (PUBLIC_SECTOR.some((pattern) => pattern.test(domain))) {
-    return 'Government or school address — not a business that buys AI services.'
-  }
+  const publicSector = publicSectorReason(lead)
+  if (publicSector) return publicSector
   if (PLACEHOLDER_DOMAINS.test(domain)) return 'Placeholder address picked up by the scraper.'
-  if (DEAD_INBOXES.test(local)) return `"${local}@" is a department inbox nobody reads for sales email.`
+  if (DEAD_INBOXES.test(local)) return `'${local}@' is a department inbox nobody reads for sales email.`
 
   const name = lead.company || lead.full_name
   if (name.length > 70 || TITLE_LIKE.test(name)) {
@@ -58,7 +92,7 @@ export function ineligibleReason(lead: EligibilityLead): string | null {
   return skipNote(lead.metadata)
 }
 
-/** Claude's own "not a fit" verdict, saved on the lead so we don't pay to ask twice. */
+/** Claude's own 'not a fit' verdict, saved on the lead so we don't pay to ask twice. */
 export function skipNote(metadata: Json): string | null {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
   const note = (metadata as Record<string, Json | undefined>).outreach_skip

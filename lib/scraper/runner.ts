@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { publicSectorReason } from '@/lib/outreach/eligibility'
 import type { Database, ScrapeJob } from '@/lib/supabase/types'
 import { getProvider, isProviderReady } from './registry'
 import { dedupeKey, normalizeLead } from './score'
@@ -60,6 +61,7 @@ export async function runScrapeJob(supabase: Client, jobId: string): Promise<Run
 
   const seen = new Set<string>()
   let emitted = 0
+  let skippedPublic = 0
 
   const emit: ScrapeContext['emit'] = async (leads: ScrapedLeadInput[]) => {
     const remaining = job.max_results - emitted
@@ -75,6 +77,13 @@ export async function runScrapeJob(supabase: Client, jobId: string): Promise<Run
 
       // Something identifiable is required, or the record is unusable.
       if (!normalized.company && !normalized.full_name && !normalized.email) continue
+
+      // AI Savvy sells to businesses: government bodies and schools never
+      // reach the review queue.
+      if (publicSectorReason(normalized)) {
+        skippedPublic++
+        continue
+      }
 
       const key = dedupeKey(normalized)
       if (seen.has(key)) continue
@@ -154,6 +163,14 @@ export async function runScrapeJob(supabase: Client, jobId: string): Promise<Run
       progress: 100,
       total_found: emitted,
       completed_at: new Date().toISOString(),
+      ...(skippedPublic > 0
+        ? {
+            config: {
+              ...(job.config as object),
+              note: `Done. Skipped ${skippedPublic} government or school result${skippedPublic === 1 ? '' : 's'}.`,
+            },
+          }
+        : {}),
     })
     .eq('id', jobId)
 

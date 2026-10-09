@@ -58,6 +58,11 @@ const signUpSchema = z.object({
 })
 
 export async function signUp(_prev: AuthState, formData: FormData): Promise<AuthState> {
+  // Private workspace: new people join by invitation, not open sign-up.
+  if (process.env.ALLOW_SIGNUPS !== 'true') {
+    return { error: 'Sign-ups are closed. Ask the workspace owner for an invite.' }
+  }
+
   const parsed = signUpSchema.safeParse({
     fullName: formData.get('fullName'),
     organizationName: formData.get('organizationName'),

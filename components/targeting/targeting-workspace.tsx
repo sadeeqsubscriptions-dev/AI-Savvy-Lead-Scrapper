@@ -1,7 +1,7 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
 import { Crosshair } from 'lucide-react'
 import { currentBrief } from '@/lib/ai/brief-shape'
 import type { LeadWithOwner } from '@/lib/queries'
@@ -10,7 +10,6 @@ import { Avatar } from '@/components/ui/avatar'
 import { Badge, ScoreBadge, leadStatusTone } from '@/components/ui/badge'
 import { Card, EmptyState, SectionHeading } from '@/components/ui/card'
 import { Select } from '@/components/ui/field'
-import { TargetingDrawer } from './targeting-drawer'
 
 export function TargetingWorkspace({
   leads,
@@ -24,7 +23,6 @@ export function TargetingWorkspace({
   activeRepName: string
 }) {
   const router = useRouter()
-  const [selected, setSelected] = useState<LeadWithOwner | null>(null)
 
   return (
     <div className="mx-auto max-w-[1200px] space-y-5">
@@ -61,12 +59,7 @@ export function TargetingWorkspace({
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {leads.map((lead) => (
-            <button
-              key={lead.id}
-              type="button"
-              onClick={() => setSelected(lead)}
-              className="hover-lift group text-left"
-            >
+            <Link key={lead.id} href={`/targeting/${lead.id}`} className="hover-lift group text-left">
               <Card className="h-full p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2.5">
@@ -96,12 +89,11 @@ export function TargetingWorkspace({
                     : 'No brief generated yet'}
                 </p>
               </Card>
-            </button>
+            </Link>
           ))}
         </div>
       )}
 
-      <TargetingDrawer lead={selected} onClose={() => setSelected(null)} />
     </div>
   )
 }

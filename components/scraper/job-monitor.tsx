@@ -239,7 +239,19 @@ export function JobMonitor({ jobId, onClear }: { jobId: string; onClear: () => v
             <table className="w-full min-w-[720px] text-left">
               <thead className="sticky top-0 border-b border-border bg-card text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <th className="w-10 px-5 py-2.5" />
+                  <th className="w-10 px-5 py-2.5">
+                    {pendingRecords.length > 0 ? (
+                      <input
+                        type="checkbox"
+                        checked={pendingRecords.every((record) => selected.has(record.id))}
+                        onChange={(event) =>
+                          setSelected(event.target.checked ? new Set(pendingRecords.map((record) => record.id)) : new Set())
+                        }
+                        className="size-3.5 accent-[var(--primary)]"
+                        aria-label="Select all results waiting for review"
+                      />
+                    ) : null}
+                  </th>
                   <th className="px-3 py-2.5 font-medium">Contact</th>
                   <th className="px-3 py-2.5 font-medium">Company</th>
                   <th className="px-3 py-2.5 font-medium">Email</th>

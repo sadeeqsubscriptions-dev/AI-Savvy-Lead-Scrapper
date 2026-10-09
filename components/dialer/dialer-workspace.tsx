@@ -7,7 +7,6 @@ import type { Call as TwilioCall, Device } from '@twilio/voice-sdk'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import {
   AlertTriangle,
-  ArrowLeft,
   Bot,
   Mic,
   MicOff,
@@ -61,7 +60,16 @@ function clock(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-function LeadPicker({ leads }: { leads: PickerLead[] }) {
+function LeadPicker({
+  leads,
+  selectedId,
+  locked,
+}: {
+  leads: PickerLead[]
+  selectedId: string | null
+  /** During a call, switching leads would hang up. */
+  locked: boolean
+}) {
   const [query, setQuery] = useState('')
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()
@@ -72,14 +80,14 @@ function LeadPicker({ leads }: { leads: PickerLead[] }) {
   }, [leads, query])
 
   return (
-    <Card>
+    <Card className={cn(locked && 'pointer-events-none opacity-60')}>
       <div className="border-b border-border p-3">
         <div className="relative">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search leads with a phone number"
+            placeholder={`Search ${leads.length} leads with a phone`}
             className="pl-9"
             aria-label="Search leads"
           />
@@ -88,16 +96,23 @@ function LeadPicker({ leads }: { leads: PickerLead[] }) {
       {filtered.length === 0 ? (
         <EmptyState icon={Phone} title="No leads to call" description="Leads with a phone number show up here." />
       ) : (
-        <ul className="max-h-[70vh] divide-y divide-border overflow-y-auto">
+        <ul className="max-h-[75vh] divide-y divide-border overflow-y-auto">
           {filtered.map((lead) => (
             <li key={lead.id}>
               <Link
                 href={`/dialer?lead=${lead.id}`}
-                className="flex items-center gap-3 p-3 transition-colors hover:bg-secondary/40"
+                aria-current={lead.id === selectedId ? 'page' : undefined}
+                className={cn(
+                  'flex items-center gap-3 p-3 transition-colors hover:bg-secondary/40',
+                  lead.id === selectedId && 'bg-primary/10',
+                )}
               >
                 <Avatar name={lead.full_name} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{lead.full_name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {[lead.company !== lead.full_name ? lead.company : null, lead.status].filter(Boolean).join(' · ')}
+                  </span>
                   <span className="block truncate font-mono text-xs text-muted-foreground">{lead.phone}</span>
                 </span>
                 <ScoreBadge score={lead.score} />
@@ -317,18 +332,21 @@ export function DialerWorkspace({
         </Card>
       ) : null}
 
-      {!lead ? (
-        <div className="max-w-xl">
-          <LeadPicker leads={leads} />
-        </div>
-      ) : (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-          <div className="space-y-4">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+        <LeadPicker leads={leads} selectedId={lead?.id ?? null} locked={onCall} />
+
+        {!lead ? (
+          <Card>
+            <EmptyState
+              icon={PhoneCall}
+              title="Pick a lead to call"
+              description="Choose someone from the list. Their sales script stays on screen while Claude listens and suggests answers."
+            />
+          </Card>
+        ) : (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
+          <div className="order-2 space-y-4">
             <Card className="p-4">
-              <Link href="/dialer" className="mb-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                <ArrowLeft className="size-3.5" />
-                All leads
-              </Link>
               <div className="flex items-center gap-3">
                 <Avatar name={lead.full_name} size="lg" />
                 <div className="min-w-0">
@@ -366,7 +384,7 @@ export function DialerWorkspace({
             </Card>
           </div>
 
-          <div className="space-y-4">
+          <div className="order-1 space-y-4">
             <Card className="p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Input
@@ -515,7 +533,8 @@ export function DialerWorkspace({
             ) : null}
           </div>
         </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

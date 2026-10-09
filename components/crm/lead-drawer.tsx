@@ -1,8 +1,10 @@
 'use client'
 
+import Link from 'next/link'
 import { useActionState, useEffect, useState, useTransition } from 'react'
 import {
   Building2,
+  ExternalLink,
   Globe,
   Mail,
   MapPin,
@@ -21,7 +23,7 @@ import type { ActivityType, LeadActivity, LeadStatus } from '@/lib/supabase/type
 import type { LeadWithOwner } from '@/lib/queries'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge, leadStatusTone } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Field, Input, Select } from '@/components/ui/field'
 import { Drawer } from '@/components/ui/modal'
 import { Progress, Spinner } from '@/components/ui/progress'
@@ -175,6 +177,11 @@ export function LeadDrawer({
             Call
           </a>
         </div>
+
+        <Link href={`/targeting/${lead.id}`} className={cn(buttonVariants({ variant: 'brand', size: 'sm' }), 'w-full')}>
+          <ExternalLink className="size-3.5" />
+          Open full lead page (script, email, calls)
+        </Link>
 
         {canWrite ? (
           <div className="flex flex-wrap gap-2">

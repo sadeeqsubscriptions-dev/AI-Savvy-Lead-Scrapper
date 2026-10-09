@@ -25,7 +25,8 @@ export function ScrapeForm({
     providers.find((provider) => provider.ready)?.id ?? providers[0]?.id ?? 'sample',
   )
   const [minScore, setMinScore] = useState(0)
-  const [autoImport, setAutoImport] = useState(true)
+  // Off by default: results go to review so you pick what enters the CRM.
+  const [autoImport, setAutoImport] = useState(false)
 
   const provider = providers.find((item) => item.id === providerId)
 
@@ -179,7 +180,7 @@ export function ScrapeForm({
             checked={autoImport}
             onCheckedChange={setAutoImport}
             label="Import to CRM automatically"
-            description="Turn off to review results before they become leads. Duplicate emails are always skipped."
+            description="Off: results wait for you to select and import them. Government and school results are dropped either way, and duplicate emails are always skipped."
           />
         </div>
 

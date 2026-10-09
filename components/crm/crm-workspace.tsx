@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 import {
   Download,
+  FileSpreadsheet,
   LayoutGrid,
   List,
   MoreHorizontal,
@@ -25,6 +26,7 @@ import { Select } from '@/components/ui/field'
 import { Modal } from '@/components/ui/modal'
 import { Spinner } from '@/components/ui/progress'
 import { toast } from '@/components/ui/toaster'
+import { ImportLeads } from './import-leads'
 import { LeadForm, type MemberOption } from './lead-form'
 import { LeadDrawer } from './lead-drawer'
 import { cn } from '@/lib/utils'
@@ -61,6 +63,7 @@ export function CrmWorkspace({
   const [detailId, setDetailId] = useState<string | null>(initialLeadId ?? null)
   const [editing, setEditing] = useState<LeadWithOwner | null>(null)
   const [creating, setCreating] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState(false)
 
   const detailLead = useMemo(
@@ -184,10 +187,16 @@ export function CrmWorkspace({
               Export CSV
             </Button>
             {canWrite ? (
-              <Button variant="brand" onClick={() => setCreating(true)}>
-                <Plus className="size-4" />
-                Add lead
-              </Button>
+              <>
+                <Button variant="outline" onClick={() => setImporting(true)}>
+                  <FileSpreadsheet className="size-4" />
+                  Import Excel / CSV
+                </Button>
+                <Button variant="brand" onClick={() => setCreating(true)}>
+                  <Plus className="size-4" />
+                  Add lead
+                </Button>
+              </>
             ) : null}
           </>
         }
@@ -579,6 +588,8 @@ export function CrmWorkspace({
       >
         <LeadForm members={members} onDone={() => setCreating(false)} />
       </Modal>
+
+      <ImportLeads open={importing} onClose={() => setImporting(false)} />
 
       <Modal
         open={Boolean(editing)}

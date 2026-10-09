@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import {
+  Activity,
   CalendarDays,
   Crosshair,
   Database,
@@ -32,11 +33,12 @@ import { cn } from '@/lib/utils'
 
 const workspaceNav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/scraper', label: 'Lead scraper', icon: FileSearch },
   { href: '/crm', label: 'CRM', icon: Database },
   { href: '/targeting', label: 'Targeting', icon: Crosshair },
   { href: '/outreach', label: 'Outreach', icon: Mail },
+  { href: '/status', label: 'Status', icon: Activity },
   { href: '/dialer', label: 'Dialer', icon: Phone },
-  { href: '/scraper', label: 'Lead scraper', icon: FileSearch },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },
 ]
 

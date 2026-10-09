@@ -272,3 +272,104 @@ export async function exportLeadsCsv() {
     csv: [columns.join(','), ...rows].join('\n'),
   }
 }
+
+const importRowSchema = z.object({
+  full_name: z.string().trim().max(160).optional().default(''),
+  company: z.string().trim().max(200).optional().default(''),
+  title: z.string().trim().max(200).optional().default(''),
+  email: z.string().trim().max(320).optional().default(''),
+  phone: z.string().trim().max(60).optional().default(''),
+  website: z.string().trim().max(500).optional().default(''),
+  location: z.string().trim().max(200).optional().default(''),
+  industry: z.string().trim().max(120).optional().default(''),
+  notes: z.string().trim().max(5000).optional().default(''),
+})
+
+export type ImportRow = z.input<typeof importRowSchema>
+
+/**
+ * Bulk-adds leads from an uploaded spreadsheet. The client sends rows in
+ * chunks; emails already in the workspace (or repeated in the file) are
+ * skipped rather than failing the whole batch.
+ */
+export async function importLeads(rows: ImportRow[]) {
+  const session = await requireSession()
+  if (!canWrite(session.role)) return { ok: false as const, error: 'Your role cannot add leads.' }
+  if (rows.length === 0) return { ok: true as const, imported: 0, duplicates: 0, invalid: 0 }
+  if (rows.length > 500) return { ok: false as const, error: 'Send at most 500 rows at a time.' }
+
+  const supabase = await createClient()
+  const orgId = session.organization.id
+  const text = (value: string) => (value.length > 0 ? value : null)
+  const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+
+  let invalid = 0
+  const candidates = []
+  for (const raw of rows) {
+    const parsed = importRowSchema.safeParse(raw)
+    if (!parsed.success) {
+      invalid++
+      continue
+    }
+    const row = parsed.data
+    const name = row.full_name || row.company
+    if (!name) {
+      invalid++
+      continue
+    }
+    const email = row.email.toLowerCase()
+    candidates.push({
+      org_id: orgId,
+      created_by: session.userId,
+      owner_id: session.userId,
+      source: 'Import',
+      full_name: name,
+      company: text(row.company),
+      title: text(row.title),
+      email: email && validEmail(email) ? email : null,
+      phone: text(row.phone),
+      website: text(row.website),
+      location: text(row.location),
+      industry: text(row.industry),
+      notes: text(row.notes),
+    })
+  }
+
+  const emails = candidates.map((lead) => lead.email).filter((email): email is string => Boolean(email))
+  const existing = new Set<string>()
+  if (emails.length > 0) {
+    const { data } = await supabase.from('leads').select('email').eq('org_id', orgId).in('email', emails)
+    for (const lead of data ?? []) if (lead.email) existing.add(lead.email.toLowerCase())
+  }
+
+  let duplicates = 0
+  const fresh = candidates.filter((lead) => {
+    if (!lead.email) return true
+    if (existing.has(lead.email)) {
+      duplicates++
+      return false
+    }
+    existing.add(lead.email)
+    return true
+  })
+
+  let imported = 0
+  if (fresh.length > 0) {
+    const { error } = await supabase.from('leads').insert(fresh)
+    if (!error) {
+      imported = fresh.length
+    } else {
+      // A mixed-case duplicate slipped past the lookup: fall back to one by one.
+      for (const lead of fresh) {
+        const { error: rowError } = await supabase.from('leads').insert(lead)
+        if (rowError) duplicates++
+        else imported++
+      }
+    }
+  }
+
+  revalidateLeadViews()
+  revalidatePath('/targeting')
+  revalidatePath('/outreach')
+  return { ok: true as const, imported, duplicates, invalid }
+}
