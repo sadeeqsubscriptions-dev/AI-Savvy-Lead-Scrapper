@@ -21,6 +21,8 @@ export type ActivityType =
 export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type RecordStatus = 'pending' | 'imported' | 'rejected' | 'duplicate'
 export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired'
+export type OutreachStatus = 'active' | 'replied' | 'completed' | 'stopped' | 'bounced'
+export type OutreachDirection = 'outbound' | 'inbound'
 
 type Timestamps = {
   created_at: string
@@ -181,6 +183,37 @@ export type ScrapedRecord = {
   created_at: string
 }
 
+export type OutreachThread = Timestamps & {
+  id: string
+  org_id: string
+  lead_id: string
+  status: OutreachStatus
+  subject: string
+  to_email: string
+  emails_sent: number
+  next_followup_at: string | null
+  last_sent_at: string | null
+  replied_at: string | null
+  last_error: string | null
+  created_by: string | null
+}
+
+export type OutreachMessage = {
+  id: string
+  org_id: string
+  thread_id: string
+  direction: OutreachDirection
+  step: number | null
+  subject: string
+  body: string
+  message_id: string
+  in_reply_to: string | null
+  from_email: string
+  to_email: string
+  sent_at: string
+  created_at: string
+}
+
 export type Notification = {
   id: string
   org_id: string
@@ -304,6 +337,20 @@ export type Database = {
           | 'imported_lead_id' | 'created_at'
         >,
         Partial<ScrapedRecord>
+      >
+      outreach_threads: Table<
+        OutreachThread,
+        Defaulted<
+          OutreachThread,
+          | 'id' | 'status' | 'subject' | 'emails_sent' | 'next_followup_at' | 'last_sent_at'
+          | 'replied_at' | 'last_error' | 'created_by' | 'created_at' | 'updated_at'
+        >,
+        Partial<OutreachThread>
+      >
+      outreach_messages: Table<
+        OutreachMessage,
+        Defaulted<OutreachMessage, 'id' | 'step' | 'subject' | 'body' | 'in_reply_to' | 'sent_at' | 'created_at'>,
+        Partial<OutreachMessage>
       >
       notifications: Table<
         Notification,

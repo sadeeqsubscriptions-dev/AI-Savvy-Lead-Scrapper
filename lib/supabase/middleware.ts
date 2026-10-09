@@ -2,7 +2,8 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import type { Database } from './types'
 
-const PUBLIC_ROUTES = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/auth']
+// The outreach cron has no session; it authenticates with CRON_SECRET instead.
+const PUBLIC_ROUTES = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/auth', '/api/outreach/cron']
 const AUTH_ROUTES = ['/login', '/signup', '/forgot-password']
 
 function isPublic(pathname: string) {

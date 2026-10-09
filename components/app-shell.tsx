@@ -10,6 +10,7 @@ import {
   FileSearch,
   LayoutDashboard,
   LogOut,
+  Mail,
   Menu,
   Moon,
   Settings,
@@ -32,6 +33,7 @@ const workspaceNav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/crm', label: 'CRM', icon: Database },
   { href: '/targeting', label: 'Targeting', icon: Crosshair },
+  { href: '/outreach', label: 'Outreach', icon: Mail },
   { href: '/scraper', label: 'Lead scraper', icon: FileSearch },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },
 ]

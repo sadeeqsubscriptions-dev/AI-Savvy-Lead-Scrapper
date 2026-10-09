@@ -7,6 +7,8 @@ import type {
   LeadStatus,
   LeadTrendPoint,
   Meeting,
+  OutreachMessage,
+  OutreachThread,
   Profile,
   ScrapeJob,
   ScrapedRecord,
@@ -326,4 +328,40 @@ export async function getPendingRecordCount(orgId: string) {
     .eq('status', 'pending')
 
   return count ?? 0
+}
+
+// ─── Outreach ───────────────────────────────────────────────────────────────
+
+export type OutreachLead = Pick<
+  Lead,
+  'id' | 'full_name' | 'company' | 'title' | 'email' | 'industry' | 'score' | 'status' | 'source' | 'created_at'
+>
+export type OutreachThreadWithMessages = OutreachThread & { messages: OutreachMessage[] }
+
+/** Every lead with an email address, plus each outreach thread and its messages. */
+export async function getOutreachBoard(orgId: string) {
+  const supabase = await createClient()
+
+  const [{ data: leads }, { data: threads }] = await Promise.all([
+    supabase
+      .from('leads')
+      .select('id, full_name, company, title, email, industry, score, status, source, created_at')
+      .eq('org_id', orgId)
+      .not('email', 'is', null)
+      .neq('email', '')
+      .order('created_at', { ascending: false })
+      .limit(500),
+    supabase
+      .from('outreach_threads')
+      .select('*, messages:outreach_messages(*)')
+      .eq('org_id', orgId)
+      .order('updated_at', { ascending: false }),
+  ])
+
+  const withMessages = ((threads as unknown as OutreachThreadWithMessages[] | null) ?? []).map((thread) => ({
+    ...thread,
+    messages: [...thread.messages].sort((a, b) => a.sent_at.localeCompare(b.sent_at)),
+  }))
+
+  return { leads: (leads as OutreachLead[] | null) ?? [], threads: withMessages }
 }
