@@ -72,7 +72,8 @@ function extractJson(text: string) {
 
 export async function generateLeadBrief(leadId: string): Promise<BriefResult> {
   const session = await requireSession()
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  // Trim: a key pasted into Vercel often carries a trailing space or newline.
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
 
   if (!apiKey) {
     return { ok: false, error: 'ANTHROPIC_API_KEY is not set. Add it in your Vercel project settings.' }
@@ -119,7 +120,10 @@ export async function generateLeadBrief(leadId: string): Promise<BriefResult> {
     }
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError) {
-      return { ok: false, error: 'Claude rejected the API key. Check ANTHROPIC_API_KEY.' }
+      return {
+        ok: false,
+        error: `Anthropic rejected ANTHROPIC_API_KEY (key starting ${apiKey.slice(0, 10)}…): ${error.message}`,
+      }
     }
     if (error instanceof Anthropic.RateLimitError) {
       return { ok: false, error: 'Claude rate limit reached. Try again in a moment.' }
