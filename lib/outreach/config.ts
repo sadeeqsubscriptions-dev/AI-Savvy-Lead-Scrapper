@@ -57,16 +57,16 @@ export const FOLLOW_UP_DELAYS_DAYS = [3, 5]
 
 export const TOTAL_STEPS = FOLLOW_UP_DELAYS_DAYS.length + 1
 
-/** How many leads one "Send to all" click handles, so the request fits the 300s limit. */
-export const BATCH_SIZE = 3
-
 export function senderConfig() {
   return {
     name: process.env.OUTREACH_SENDER_NAME || 'The AI Savvy team',
     title: process.env.OUTREACH_SENDER_TITLE || 'AI Savvy',
     postalAddress: process.env.OUTREACH_POSTAL_ADDRESS || null,
-    // Mail providers flag new mailboxes that suddenly send cold email in bulk
-    // (Zoho can suspend outgoing mail). Start low and raise it as replies come in.
-    dailyLimit: Number(process.env.OUTREACH_DAILY_LIMIT) || 25,
+    // New leads emailed per day (US Eastern day). The scheduler spreads them
+    // through business hours.
+    dailyNew: Number(process.env.OUTREACH_DAILY_NEW) || 25,
+    // Safety cap on everything sent per day (first emails + follow-ups +
+    // replies). Mail providers flag mailboxes that suddenly send in bulk.
+    dailyLimit: Math.max(Number(process.env.OUTREACH_DAILY_LIMIT) || 0, (Number(process.env.OUTREACH_DAILY_NEW) || 25) * 2),
   }
 }

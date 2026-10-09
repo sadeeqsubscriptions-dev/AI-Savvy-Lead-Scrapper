@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
-import { NextResponse, type NextRequest } from 'next/server'
+import { NextResponse, after, type NextRequest } from 'next/server'
 import { runOutreachCycle } from '@/lib/outreach/engine'
 import { createAdminClient, hasAdminCredentials } from '@/lib/supabase/admin'
 
@@ -17,9 +17,14 @@ function authorized(request: NextRequest) {
 }
 
 /**
- * Scheduled run: reads replies from the inbox, then sends due follow-ups for
- * every workspace. Vercel Cron sends `Authorization: Bearer $CRON_SECRET`
- * automatically; external schedulers (cron-job.org) must send the same header.
+ * Scheduled run, every ~15 minutes: reads replies from the inbox, sends due
+ * follow-ups, then sends queued first emails to leads whose local time is a
+ * weekday 9-4 (up to the daily target). Callers send
+ * `Authorization: Bearer $CRON_SECRET` (Vercel Cron does it automatically;
+ * the Supabase pg_cron job in supabase/setup/outreach-cron.sql does too).
+ *
+ * Responds at once and works in `after()`, so a scheduler with a short
+ * HTTP timeout never cuts a send off half-way.
  */
 export async function GET(request: NextRequest) {
   if (!authorized(request)) {
@@ -29,6 +34,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'SUPABASE_SERVICE_ROLE_KEY is not set' }, { status: 500 })
   }
 
-  const result = await runOutreachCycle(createAdminClient())
-  return NextResponse.json(result)
+  after(async () => {
+    const result = await runOutreachCycle(createAdminClient())
+    console.log('[outreach-cron]', JSON.stringify(result))
+  })
+  return NextResponse.json({ started: true }, { status: 202 })
 }

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import {
   AlertTriangle,
   Ban,
+  CalendarClock,
   ChevronRight,
   Inbox,
   MailCheck,
@@ -14,7 +15,13 @@ import {
   Send,
   Users,
 } from 'lucide-react'
-import { checkEmailConnection, sendOutreach, sendOutreachBatch, syncOutreach } from '@/lib/actions/outreach'
+import {
+  cancelScheduledOutreach,
+  checkEmailConnection,
+  scheduleOutreachBatch,
+  sendOutreach,
+  syncOutreach,
+} from '@/lib/actions/outreach'
 import type { DraftEmail } from '@/lib/outreach/compose'
 import { ineligibleReason } from '@/lib/outreach/eligibility'
 import type { OutreachLead, OutreachThreadWithMessages } from '@/lib/queries'
@@ -30,7 +37,7 @@ import { toast } from '@/components/ui/toaster'
 import { LeadEmailDrawer } from './lead-email-drawer'
 import { OutreachDrawer, outreachStatusLabel, outreachStatusTone } from './outreach-drawer'
 
-type Tab = 'ready' | 'research' | 'active' | 'replied' | 'done' | 'skipped'
+type Tab = 'scheduled' | 'ready' | 'research' | 'active' | 'replied' | 'done' | 'skipped'
 
 export function OutreachWorkspace({
   leads,
@@ -38,17 +45,15 @@ export function OutreachWorkspace({
   canSend,
   mail,
   totalSteps,
-  batchSize,
 }: {
   leads: OutreachLead[]
   threads: OutreachThreadWithMessages[]
   canSend: boolean
   mail: { configured: boolean; sender: string; sentToday: number; dailyLimit: number; webmailUrl: string }
   totalSteps: number
-  batchSize: number
 }) {
   const router = useRouter()
-  const [tab, setTab] = useState<Tab>('ready')
+  const [tab, setTab] = useState<Tab>('scheduled')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [previewLeadId, setPreviewLeadId] = useState<string | null>(null)
   // Drafts survive closing the drawer, so reopening a lead doesn't pay for a rewrite.
@@ -63,12 +68,14 @@ export function OutreachWorkspace({
   const leadById = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads])
   const contacted = useMemo(() => new Set(threads.map((thread) => thread.lead_id)), [threads])
   const uncontacted = leads.filter((lead) => !contacted.has(lead.id))
+  // Queued for the scheduler: researched (or hand-written) and waiting for business hours.
+  const scheduled = uncontacted.filter((lead) => lead.scheduled)
   const flags = useMemo(() => new Map(leads.map((lead) => [lead.id, ineligibleReason(lead)])), [leads])
   // Researched in Targeting = ready to email; the rest wait for research.
-  const eligible = uncontacted.filter((lead) => !flags.get(lead.id))
+  const eligible = uncontacted.filter((lead) => !lead.scheduled && !flags.get(lead.id))
   const ready = eligible.filter((lead) => lead.researched)
   const needsResearch = eligible.filter((lead) => !lead.researched)
-  const skipped = uncontacted.filter((lead) => flags.get(lead.id))
+  const skipped = uncontacted.filter((lead) => !lead.scheduled && flags.get(lead.id))
 
   const groups = {
     active: threads.filter((thread) => thread.status === 'active'),
@@ -79,7 +86,6 @@ export function OutreachWorkspace({
   }
 
   const replyRate = threads.length > 0 ? Math.round((groups.replied.length / threads.length) * 100) : 0
-  const remaining = Math.max(0, mail.dailyLimit - mail.sentToday)
   const canEmail = canSend && mail.configured
   const selected = threads.find((thread) => thread.id === selectedId) ?? null
   const previewLead = previewLeadId && !contacted.has(previewLeadId) ? (leadById.get(previewLeadId) ?? null) : null
@@ -122,37 +128,53 @@ export function OutreachWorkspace({
         toast.error(result.error)
         return
       }
-      toast.success(`Email sent to ${lead.full_name}.`)
+      toast.success(
+        result.scheduledFor
+          ? `Outside business hours for ${lead.full_name}: scheduled for ${result.scheduledFor}.`
+          : `Email sent to ${lead.full_name}.`,
+      )
       router.refresh()
+    })
+  }
+
+  const unschedule = (lead: OutreachLead) => {
+    startSend(async () => {
+      const result = await cancelScheduledOutreach(lead.id)
+      if (!result.ok) toast.error(result.error)
+      else {
+        toast.success(`Removed ${lead.full_name} from the schedule.`)
+        router.refresh()
+      }
     })
   }
 
   const sendBatch = () => {
     setConfirmBulk(false)
-    const ids = ready.slice(0, Math.min(batchSize, remaining)).map((lead) => lead.id)
+    const ids = ready.map((lead) => lead.id)
     startSend(async () => {
-      const result = await sendOutreachBatch(ids)
-      if (result.sent > 0 || result.skipped > 0) {
+      const result = await scheduleOutreachBatch(ids)
+      if (result.queued > 0) {
         toast.success(
-          `Sent ${result.sent} email${result.sent === 1 ? '' : 's'}` +
-            (result.skipped > 0 ? `, skipped ${result.skipped} that Claude judged not a fit.` : '.'),
+          `Scheduled ${result.queued} lead${result.queued === 1 ? '' : 's'}. Up to ${mail.dailyLimit} go out each weekday in their business hours.`,
         )
       }
       if (result.errors.length > 0) toast.error(result.errors[0])
+      setTab('scheduled')
       router.refresh()
     })
   }
 
-  const batchCount = Math.min(batchSize, ready.length, remaining)
+  const batchCount = ready.length
 
   const stats = [
-    { label: 'Ready to email', value: ready.length, icon: Users },
+    { label: 'Scheduled', value: scheduled.length, hint: 'Sends weekdays, 9-4 their time', icon: CalendarClock },
     { label: 'In sequence', value: groups.active.length, icon: Send },
     { label: 'Replies', value: groups.replied.length, hint: `${replyRate}% reply rate`, icon: MessageSquareReply },
-    { label: 'Sent today', value: `${mail.sentToday}/${mail.dailyLimit}`, hint: 'Daily safety cap', icon: MailCheck },
+    { label: 'New leads emailed today', value: `${mail.sentToday}/${mail.dailyLimit}`, hint: 'Daily target', icon: MailCheck },
   ]
 
   const tabs: { key: Tab; label: string; count: number }[] = [
+    { key: 'scheduled', label: 'Scheduled', count: scheduled.length },
     { key: 'ready', label: 'Ready', count: ready.length },
     { key: 'research', label: 'Needs research', count: needsResearch.length },
     { key: 'active', label: 'In sequence', count: groups.active.length },
@@ -161,9 +183,10 @@ export function OutreachWorkspace({
     { key: 'skipped', label: 'Not a fit', count: skipped.length },
   ]
 
-  const leadTab = tab === 'ready' || tab === 'research' || tab === 'skipped'
+  const leadTab = tab === 'scheduled' || tab === 'ready' || tab === 'research' || tab === 'skipped'
   const threadRows = leadTab ? [] : groups[tab]
-  const leadRows = tab === 'ready' ? ready : tab === 'research' ? needsResearch : skipped
+  const leadRows =
+    tab === 'scheduled' ? scheduled : tab === 'ready' ? ready : tab === 'research' ? needsResearch : skipped
 
   return (
     <div className="mx-auto max-w-[1200px] space-y-5">
@@ -184,7 +207,7 @@ export function OutreachWorkspace({
               </Button>
               <Button variant="brand" onClick={() => setConfirmBulk(true)} disabled={sending || batchCount === 0}>
                 <Send className="size-4" />
-                Email {batchCount > 0 ? batchCount : ''} ready
+                Schedule {batchCount > 0 ? batchCount : ''} ready
               </Button>
             </>
           ) : null
@@ -248,11 +271,19 @@ export function OutreachWorkspace({
             <EmptyState
               icon={tab === 'skipped' ? Ban : Users}
               title={
-                tab === 'ready' ? 'Nothing researched yet' : tab === 'research' ? 'Everyone is researched' : 'Nothing screened out'
+                tab === 'scheduled'
+                  ? 'Nothing scheduled'
+                  : tab === 'ready'
+                    ? 'Nothing waiting'
+                    : tab === 'research'
+                      ? 'Everyone is researched'
+                      : 'Nothing screened out'
               }
               description={
-                tab === 'ready'
-                  ? 'Leads appear here once Claude has written their sales script in Targeting.'
+                tab === 'scheduled'
+                  ? 'Research a lead in Targeting and its first email is scheduled automatically.'
+                  : tab === 'ready'
+                  ? 'Researched leads that are not scheduled yet (for example, researched before auto-scheduling) show here.'
                   : tab === 'research'
                     ? 'Every eligible lead with an email has a sales script.'
                     : 'Government offices, article titles and department inboxes land here instead of getting emailed.'
@@ -260,7 +291,12 @@ export function OutreachWorkspace({
             />
           ) : (
             <ul className="divide-y divide-border">
-              {tab === 'skipped' ? (
+              {tab === 'scheduled' ? (
+                <li className="bg-secondary/30 px-4 py-2.5 text-xs text-muted-foreground">
+                  Sent automatically on weekdays between 9 AM and 4 PM in each lead&apos;s own time zone, up to{' '}
+                  {mail.dailyLimit} new leads a day. No weekends or US holidays.
+                </li>
+              ) : tab === 'skipped' ? (
                 <li className="bg-secondary/30 px-4 py-2.5 text-xs text-muted-foreground">
                   These won&apos;t be emailed automatically. Open one to see why, or write an email anyway.
                 </li>
@@ -280,7 +316,9 @@ export function OutreachWorkspace({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{lead.full_name}</span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {tab === 'skipped'
+                        {tab === 'scheduled' && lead.scheduled
+                          ? `Goes out ${lead.scheduled.label}${lead.scheduled.hasDraft ? ' · your edited email' : ''}${lead.scheduled.error ? ` · retrying: ${lead.scheduled.error}` : ''}`
+                          : tab === 'skipped'
                           ? flags.get(lead.id)
                           : drafts[lead.id]
                             ? `Draft ready · pitching ${drafts[lead.id].service}`
@@ -293,6 +331,11 @@ export function OutreachWorkspace({
                     <ScoreBadge score={lead.score} />
                     <ChevronRight className="hidden size-4 text-muted-foreground sm:block" />
                   </button>
+                  {canSend && tab === 'scheduled' ? (
+                    <Button size="sm" variant="ghost" onClick={() => unschedule(lead)} disabled={sending}>
+                      Unschedule
+                    </Button>
+                  ) : null}
                   {canEmail && tab === 'ready' ? (
                     <Button size="sm" onClick={() => sendOne(lead)} disabled={sending} className="sm:w-28">
                       {sendingLead === lead.id ? <Spinner className="size-3.5" /> : <Send className="size-3.5" />}
@@ -361,8 +404,8 @@ export function OutreachWorkspace({
       <Modal
         open={confirmBulk}
         onClose={() => setConfirmBulk(false)}
-        title={`Email ${batchCount} lead${batchCount === 1 ? '' : 's'}?`}
-        description="Claude writes a personal email for each one and sends it from your inbox. This takes a few seconds per lead."
+        title={`Schedule ${batchCount} lead${batchCount === 1 ? '' : 's'}?`}
+        description="Each gets a personal email from its sales script, sent automatically on the next weekday between 9 AM and 4 PM in the lead's time zone. Up to the daily target go out per day."
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirmBulk(false)}>
@@ -370,7 +413,7 @@ export function OutreachWorkspace({
             </Button>
             <Button variant="brand" onClick={sendBatch}>
               <Send className="size-4" />
-              Send {batchCount}
+              Schedule {batchCount}
             </Button>
           </>
         }

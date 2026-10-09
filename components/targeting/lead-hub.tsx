@@ -7,6 +7,7 @@ import {
   ArrowDownLeft,
   ArrowLeft,
   ArrowUpRight,
+  CalendarClock,
   Building2,
   Database,
   Globe,
@@ -18,9 +19,12 @@ import {
   Send,
   Sparkles,
 } from 'lucide-react'
+import { cancelScheduledOutreach } from '@/lib/actions/outreach'
 import { generateLeadBrief } from '@/lib/actions/targeting'
 import { updateLeadStatus } from '@/lib/actions/leads'
 import { LEAD_STATUSES } from '@/lib/constants'
+import { outreachQueue } from '@/lib/outreach/queue-shape'
+import { describeSendTime, leadTimezone, nextSendWindow } from '@/lib/outreach/schedule'
 import { formatDateTime, formatRelative } from '@/lib/format'
 import type { Call, Lead, LeadAiBrief, LeadStatus, OutreachMessage, OutreachThread } from '@/lib/supabase/types'
 import { cn } from '@/lib/utils'
@@ -97,7 +101,11 @@ export function LeadHub({
         return
       }
       setBrief(result.brief)
-      toast.success('Script ready. This lead now shows as researched in Outreach.')
+      toast.success(
+        result.scheduledFor
+          ? `Script ready. First email scheduled for ${result.scheduledFor}.`
+          : 'Script ready.',
+      )
       router.refresh()
     })
   }
@@ -108,6 +116,20 @@ export function LeadHub({
       if (result.error) toast.error(result.error)
       else {
         toast.success(`Moved to ${status}.`)
+        router.refresh()
+      }
+    })
+  }
+
+  const queue = outreachQueue(lead.metadata)
+  const zone = leadTimezone(lead)
+
+  const unschedule = () => {
+    startStatus(async () => {
+      const result = await cancelScheduledOutreach(lead.id)
+      if (!result.ok) toast.error(result.error)
+      else {
+        toast.success('Removed from the schedule.')
         router.refresh()
       }
     })
@@ -283,7 +305,38 @@ export function LeadHub({
                 </p>
               </div>
             ) : (
-              <EmailComposer lead={lead} flagged={flagged} canWrite={canWrite} mailReady={mailReady} />
+              queue ? (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/[0.06] p-4">
+                    <CalendarClock className="mt-0.5 size-4 shrink-0 text-primary" />
+                    <div className="min-w-0 flex-1 text-sm">
+                      <p className="font-medium">
+                        Scheduled · goes out {describeSendTime(nextSendWindow(zone), zone)}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {queue.draft
+                          ? 'Your edited email below is sent as written.'
+                          : 'Claude writes it from the sales script at send time.'}{' '}
+                        Weekdays 9 AM-4 PM their time, up to the daily target.
+                        {queue.last_error ? ` Last attempt failed: ${queue.last_error}` : ''}
+                      </p>
+                    </div>
+                    {canWrite ? (
+                      <Button variant="ghost" size="sm" onClick={unschedule} disabled={savingStatus}>
+                        Unschedule
+                      </Button>
+                    ) : null}
+                  </div>
+                  {queue.draft ? (
+                    <div className="rounded-xl border border-border p-3">
+                      <p className="mb-1 text-xs font-medium">{queue.draft.subject}</p>
+                      <p className="text-sm leading-6 whitespace-pre-wrap break-words">{queue.draft.body}</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <EmailComposer lead={lead} flagged={flagged} canWrite={canWrite} mailReady={mailReady} />
+              )
             )}
           </Section>
 

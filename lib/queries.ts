@@ -1,4 +1,6 @@
 import { currentBrief } from '@/lib/ai/brief-shape'
+import { outreachQueue } from '@/lib/outreach/queue-shape'
+import { describeSendTime, leadTimezone, nextSendWindow } from '@/lib/outreach/schedule'
 import { createClient } from '@/lib/supabase/server'
 import { PAGE_SIZE } from '@/lib/constants'
 import type {
@@ -340,6 +342,8 @@ export type OutreachLead = Pick<
 > & {
   /** Has a current sales script from Targeting. */
   researched: boolean
+  /** Waiting in the send queue: when it goes out (lead's local time). */
+  scheduled: { label: string; hasDraft: boolean; error: string | null } | null
 }
 export type OutreachThreadWithMessages = OutreachThread & { messages: OutreachMessage[] }
 
@@ -371,8 +375,22 @@ export async function getOutreachBoard(orgId: string) {
   }))
 
   // Only whether a script exists goes to the browser, not the script itself.
-  const board = ((leads as (Omit<OutreachLead, 'researched'> & Pick<Lead, 'ai_brief'>)[] | null) ?? []).map(
-    ({ ai_brief, ...lead }) => ({ ...lead, researched: currentBrief(ai_brief) !== null }),
+  const board = ((leads as (Omit<OutreachLead, 'researched' | 'scheduled'> & Pick<Lead, 'ai_brief'>)[] | null) ?? []).map(
+    ({ ai_brief, ...lead }) => {
+      const queue = outreachQueue(lead.metadata)
+      const zone = leadTimezone(lead)
+      return {
+        ...lead,
+        researched: currentBrief(ai_brief) !== null,
+        scheduled: queue
+          ? {
+              label: describeSendTime(nextSendWindow(zone), zone),
+              hasDraft: Boolean(queue.draft),
+              error: queue.last_error ?? null,
+            }
+          : null,
+      }
+    },
   )
 
   return { leads: board, threads: withMessages }

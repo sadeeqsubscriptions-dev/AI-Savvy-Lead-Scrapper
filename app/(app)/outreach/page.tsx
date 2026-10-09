@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { canWrite, requireSession } from '@/lib/auth'
-import { BATCH_SIZE, TOTAL_STEPS, senderConfig } from '@/lib/outreach/config'
-import { sentInLast24h } from '@/lib/outreach/engine'
+import { TOTAL_STEPS, senderConfig } from '@/lib/outreach/config'
+import { sentToday } from '@/lib/outreach/engine'
 import { mailConfigured, senderAddress, webmailUrl } from '@/lib/outreach/mailer'
 import { getOutreachBoard } from '@/lib/queries'
 import { createClient } from '@/lib/supabase/server'
@@ -16,9 +16,9 @@ export default async function OutreachPage() {
   const session = await requireSession()
   const supabase = await createClient()
 
-  const [{ leads, threads }, sentToday] = await Promise.all([
+  const [{ leads, threads }, newToday] = await Promise.all([
     getOutreachBoard(session.organization.id),
-    sentInLast24h(supabase),
+    sentToday(supabase, true),
   ])
 
   return (
@@ -29,12 +29,11 @@ export default async function OutreachPage() {
       mail={{
         configured: mailConfigured(),
         sender: senderAddress(),
-        sentToday,
-        dailyLimit: senderConfig().dailyLimit,
+        sentToday: newToday,
+        dailyLimit: senderConfig().dailyNew,
         webmailUrl: webmailUrl(),
       }}
       totalSteps={TOTAL_STEPS}
-      batchSize={BATCH_SIZE}
     />
   )
 }

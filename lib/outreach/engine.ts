@@ -1,9 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Lead, OutreachThread } from '@/lib/supabase/types'
 import { ensureBrief } from '@/lib/ai/brief'
+import { createAdminClient, hasAdminCredentials } from '@/lib/supabase/admin'
 import { composeEmail, signature, type DraftEmail, type PriorEmail } from './compose'
 import { FOLLOW_UP_DELAYS_DAYS, TOTAL_STEPS, senderConfig } from './config'
 import { ineligibleReason } from './eligibility'
+import { outreachQueue, withQueue, type OutreachQueue } from './queue-shape'
+import { describeSendTime, inSendWindow, leadTimezone, nextSendWindow, startOfEasternDay } from './schedule'
 import {
   mailConfigured,
   messageIdsIn,
@@ -31,18 +34,27 @@ function errorText(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** Outbound emails across the whole mailbox in the last 24h, for the daily cap. */
-export async function sentInLast24h(supabase: Client) {
-  const { count } = await supabase
+/**
+ * Outbound emails across the whole mailbox since midnight US Eastern.
+ * `firstOnly` counts only first emails to new leads (the daily target).
+ */
+export async function sentToday(supabase: Client, firstOnly = false) {
+  let query = supabase
     .from('outreach_messages')
     .select('id', { count: 'exact', head: true })
     .eq('direction', 'outbound')
-    .gte('sent_at', new Date(Date.now() - DAY_MS).toISOString())
+    .gte('sent_at', startOfEasternDay().toISOString())
+  if (firstOnly) query = query.eq('step', 0)
+  const { count } = await query
   return count ?? 0
 }
 
 async function remainingToday(supabase: Client) {
-  return Math.max(0, senderConfig().dailyLimit - (await sentInLast24h(supabase)))
+  return Math.max(0, senderConfig().dailyLimit - (await sentToday(supabase)))
+}
+
+async function remainingNewToday(supabase: Client) {
+  return Math.max(0, senderConfig().dailyNew - (await sentToday(supabase, true)))
 }
 
 async function logActivity(
@@ -66,13 +78,118 @@ async function loadLead(supabase: Client, orgId: string, leadId: string) {
   return data
 }
 
-/** Saves Claude's "not a fit" verdict so the lead leaves the Ready list. */
+/** Saves Claude's "not a fit" verdict so the lead leaves Ready (and the send queue). */
 async function markNotAFit(supabase: Client, lead: Lead, reason: string) {
-  const metadata = lead.metadata && typeof lead.metadata === 'object' && !Array.isArray(lead.metadata) ? lead.metadata : {}
+  const metadata = withQueue(lead.metadata, null) as Record<string, unknown>
   await supabase
     .from('leads')
-    .update({ metadata: { ...metadata, outreach_skip: { reason, at: new Date().toISOString() } } })
+    .update({ metadata: { ...metadata, outreach_skip: { reason, at: new Date().toISOString() } } as Lead['metadata'] })
     .eq('id', lead.id)
+}
+
+// ─── Scheduling ─────────────────────────────────────────────────────────────
+
+/**
+ * Queues a lead's first email for the scheduler, which sends it inside the
+ * lead's local business hours (weekdays 9-4). With `draft`, that exact email
+ * is sent; without, Claude writes it from the lead's sales script at send time.
+ */
+export async function queueOutreach(
+  supabase: Client,
+  {
+    orgId,
+    leadId,
+    by,
+    draft,
+  }: { orgId: string; leadId: string; by: string | null; draft?: { subject: string; body: string } },
+): Promise<{ ok: true; sendAt: string; label: string } | { ok: false; error: string }> {
+  const lead = await loadLead(supabase, orgId, leadId)
+  if (!lead) return { ok: false, error: 'Lead not found.' }
+  if (!lead.email) return { ok: false, error: `${lead.full_name} has no email address.` }
+
+  const { data: existing } = await supabase
+    .from('outreach_threads')
+    .select('id')
+    .eq('org_id', orgId)
+    .eq('lead_id', leadId)
+    .maybeSingle()
+  if (existing) return { ok: false, error: `${lead.full_name} has already been emailed.` }
+
+  const flagged = ineligibleReason(lead)
+  if (flagged && !draft) return { ok: false, error: `Not queued: ${flagged}` }
+
+  const queue: OutreachQueue = { queued_at: new Date().toISOString(), by, ...(draft ? { draft } : {}) }
+  await supabase.from('leads').update({ metadata: withQueue(lead.metadata, queue) }).eq('id', lead.id)
+
+  const zone = leadTimezone(lead)
+  const sendAt = nextSendWindow(zone)
+  return { ok: true, sendAt: sendAt.toISOString(), label: describeSendTime(sendAt, zone) }
+}
+
+export async function cancelQueued(supabase: Client, { orgId, leadId }: { orgId: string; leadId: string }) {
+  const lead = await loadLead(supabase, orgId, leadId)
+  if (!lead) return
+  await supabase.from('leads').update({ metadata: withQueue(lead.metadata, null) }).eq('id', lead.id)
+}
+
+/** Whether a lead's inbox is in business hours right now. */
+export function canSendNow(lead: Pick<Lead, 'location' | 'city' | 'country'>) {
+  return inSendWindow(leadTimezone(lead))
+}
+
+/** How many first emails one scheduler run sends, so the day's 25 are spread out. */
+const FIRSTS_PER_RUN = 2
+const MAX_QUEUE_ATTEMPTS = 3
+
+/** Sends queued first emails whose lead is in business hours, within today's target. */
+export async function sendQueued(supabase: Client, orgId?: string) {
+  let query = supabase
+    .from('leads')
+    .select('*')
+    .not('metadata->outreach_queue', 'is', null)
+    .limit(200)
+  if (orgId) query = query.eq('org_id', orgId)
+  const { data: queued } = await query
+
+  const due = (queued ?? [])
+    .map((lead) => ({ lead, queue: outreachQueue(lead.metadata) }))
+    .filter((item): item is { lead: Lead; queue: OutreachQueue } => item.queue !== null)
+    .filter(({ lead }) => inSendWindow(leadTimezone(lead)))
+    .sort((a, b) => a.queue.queued_at.localeCompare(b.queue.queued_at))
+
+  const budget = Math.min(FIRSTS_PER_RUN, await remainingNewToday(supabase), await remainingToday(supabase))
+  let sent = 0
+  const errors: string[] = []
+
+  for (const { lead, queue } of due) {
+    if (sent >= budget) break
+    const result = await startOutreach(supabase, {
+      orgId: lead.org_id,
+      leadId: lead.id,
+      userId: queue.by,
+      draft: queue.draft,
+    })
+    if (result.ok) {
+      sent++
+      continue
+    }
+
+    errors.push(`${lead.email}: ${result.error}`)
+    // Not a fit / already emailed / screened out: drop it. Otherwise retry later.
+    const fresh = await loadLead(supabase, lead.org_id, lead.id)
+    const stillQueued = fresh ? outreachQueue(fresh.metadata) : null
+    if (!fresh || !stillQueued) continue
+    const attempts = (stillQueued.attempts ?? 0) + 1
+    const permanent = /already|Skipped|no email/i.test(result.error) || attempts >= MAX_QUEUE_ATTEMPTS
+    await supabase
+      .from('leads')
+      .update({
+        metadata: withQueue(fresh.metadata, permanent ? null : { ...stillQueued, attempts, last_error: result.error }),
+      })
+      .eq('id', lead.id)
+  }
+
+  return { sent, errors }
 }
 
 /** Writes the first email without sending it, so a rep can read and edit it. */
@@ -102,7 +219,8 @@ export async function startOutreach(
   }: {
     orgId: string
     leadId: string
-    userId: string
+    /** Null when the scheduler sends on someone's behalf. */
+    userId: string | null
     /** A preview the rep read (and maybe edited); skips writing a new one. */
     draft?: { subject: string; body: string }
     /** The rep chose to email a lead the screening flagged. */
@@ -119,6 +237,9 @@ export async function startOutreach(
   if (flagged && !force && !reviewed) return { ok: false, error: `Skipped ${lead.full_name}: ${flagged}` }
   if ((await remainingToday(supabase)) <= 0) {
     return { ok: false, error: `Daily send limit (${senderConfig().dailyLimit}) reached. Try again tomorrow.` }
+  }
+  if ((await remainingNewToday(supabase)) <= 0) {
+    return { ok: false, error: `Daily target of ${senderConfig().dailyNew} new leads reached. Try again tomorrow.` }
   }
 
   // Claim the lead before spending anything: the unique (org_id, lead_id)
@@ -192,9 +313,15 @@ export async function startOutreach(
     })
     .eq('id', thread.id)
 
+  // Re-read metadata: it may have changed while Claude was writing.
+  const { data: latest } = await supabase.from('leads').select('metadata').eq('id', leadId).maybeSingle()
   await supabase
     .from('leads')
-    .update({ last_contacted_at: sentAt, ...(lead.status === 'New' ? { status: 'Contacted' as const } : {}) })
+    .update({
+      last_contacted_at: sentAt,
+      metadata: withQueue(latest?.metadata ?? lead.metadata, null),
+      ...(lead.status === 'New' ? { status: 'Contacted' as const } : {}),
+    })
     .eq('id', leadId)
 
   await logActivity(supabase, {
@@ -316,11 +443,20 @@ export async function sendDueFollowUps(supabase: Client, orgId?: string) {
   if (orgId) query = query.eq('org_id', orgId)
 
   const { data: due } = await query
+  const threads = due ?? []
+
+  // Follow-ups also wait for the lead's business hours.
+  const { data: places } = threads.length
+    ? await supabase.from('leads').select('id, location, city, country').in('id', threads.map((thread) => thread.lead_id))
+    : { data: [] }
+  const placeById = new Map((places ?? []).map((place) => [place.id, place]))
+  const open = threads.filter((thread) => inSendWindow(leadTimezone(placeById.get(thread.lead_id) ?? {})))
+
   const budget = await remainingToday(supabase)
   let sent = 0
   const errors: string[] = []
 
-  for (const thread of (due ?? []).slice(0, budget)) {
+  for (const thread of open.slice(0, budget)) {
     const result = await sendFollowUp(supabase, thread)
     if (result.ok) sent++
     else errors.push(`${thread.to_email}: ${result.error}`)
@@ -396,6 +532,38 @@ export async function replyToThread(
 }
 
 // ─── Replies ────────────────────────────────────────────────────────────────
+
+/**
+ * Bell + dashboard notification for a reply. Written with the service role:
+ * RLS lets users read their own notifications but not create them, and this
+ * also runs from the "Check inbox" button under a user session.
+ */
+async function notifyReply(thread: OutreachThread, text: string) {
+  if (!hasAdminCredentials()) return
+  const admin = createAdminClient()
+
+  let recipients = thread.created_by ? [thread.created_by] : []
+  if (recipients.length === 0) {
+    const { data: owners } = await admin
+      .from('organization_members')
+      .select('user_id')
+      .eq('org_id', thread.org_id)
+      .in('role', ['owner', 'admin'])
+    recipients = (owners ?? []).map((owner) => owner.user_id)
+  }
+
+  const { data: lead } = await admin.from('leads').select('full_name').eq('id', thread.lead_id).maybeSingle()
+  const who = lead?.full_name ?? thread.to_email
+  await admin.from('notifications').insert(
+    recipients.map((userId) => ({
+      org_id: thread.org_id,
+      user_id: userId,
+      title: `${who} replied to your email`,
+      body: stripQuotedReply(text).slice(0, 240),
+      href: `/targeting/${thread.lead_id}`,
+    })),
+  )
+}
 
 function isDaemon(address: string) {
   return /mailer-daemon|postmaster/i.test(address)
@@ -514,17 +682,7 @@ export async function syncReplies(supabase: Client, orgId?: string) {
       body: stripQuotedReply(message.text).slice(0, 500),
     })
 
-    if (firstReply && thread.created_by) {
-      // Service-role only; under a user session RLS rejects it, which is fine —
-      // the reply still shows on the Outreach page.
-      await supabase.from('notifications').insert({
-        org_id: thread.org_id,
-        user_id: thread.created_by,
-        title: `New reply from ${thread.to_email}`,
-        body: stripQuotedReply(message.text).slice(0, 200),
-        href: '/outreach',
-      })
-    }
+    await notifyReply(thread, message.text)
   }
 
   return { replies, bounces }
@@ -533,7 +691,7 @@ export async function syncReplies(supabase: Client, orgId?: string) {
 /** Replies first, so nobody who just answered gets a follow-up. */
 export async function runOutreachCycle(supabase: Client, orgId?: string) {
   if (!mailConfigured()) {
-    return { replies: 0, bounces: 0, followUps: 0, errors: ['Email is not connected.'] }
+    return { replies: 0, bounces: 0, followUps: 0, firsts: 0, errors: ['Email is not connected.'] }
   }
 
   const errors: string[] = []
@@ -543,11 +701,18 @@ export async function runOutreachCycle(supabase: Client, orgId?: string) {
   try {
     ;({ replies, bounces } = await syncReplies(supabase, orgId))
   } catch (error) {
-    // Without a fresh inbox read we can't tell who replied, so hold follow-ups.
-    errors.push(`Inbox check failed, follow-ups held: ${errorText(error)}`)
-    return { replies, bounces, followUps: 0, errors }
+    // Without a fresh inbox read we can't tell who replied, so hold all sending.
+    errors.push(`Inbox check failed, sending held: ${errorText(error)}`)
+    return { replies, bounces, followUps: 0, firsts: 0, errors }
   }
 
   const followUps = await sendDueFollowUps(supabase, orgId)
-  return { replies, bounces, followUps: followUps.sent, errors: [...errors, ...followUps.errors] }
+  const firsts = await sendQueued(supabase, orgId)
+  return {
+    replies,
+    bounces,
+    followUps: followUps.sent,
+    firsts: firsts.sent,
+    errors: [...errors, ...followUps.errors, ...firsts.errors],
+  }
 }

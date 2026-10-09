@@ -5,6 +5,7 @@ import { useState, useTransition } from 'react'
 import { RefreshCw, Send, ShieldAlert, Sparkles } from 'lucide-react'
 import { previewOutreachEmail, sendOutreach } from '@/lib/actions/outreach'
 import type { DraftEmail } from '@/lib/outreach/compose'
+import { describeSendTime, inSendWindow, leadTimezone, nextSendWindow } from '@/lib/outreach/schedule'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/field'
@@ -24,7 +25,15 @@ export function EmailComposer({
   mailReady,
   onSent,
 }: {
-  lead: { id: string; full_name: string; company: string | null; email: string | null }
+  lead: {
+    id: string
+    full_name: string
+    company: string | null
+    email: string | null
+    location?: string | null
+    city?: string | null
+    country?: string | null
+  }
   /** Why screening kept this lead out of automatic sending, if it did. */
   flagged: string | null
   /** Pass draft + onDraft to keep the draft outside (e.g. across drawer opens). */
@@ -43,6 +52,10 @@ export function EmailComposer({
   const draft = controlledDraft !== undefined ? controlledDraft : localDraft
   const setDraft = onDraft ?? setLocalDraft
   const warning = notAFit ? `Claude: ${notAFit}` : flagged
+  // Emails only go out on weekdays, 9-4 in the lead's own time zone.
+  const zone = leadTimezone(lead)
+  const openNow = inSendWindow(zone)
+  const sendLabel = openNow ? 'Send now' : `Schedule for ${describeSendTime(nextSendWindow(zone), zone)}`
 
   const write = (force: boolean) => {
     setNotAFit(null)
@@ -69,7 +82,11 @@ export function EmailComposer({
         toast.error(result.error)
         return
       }
-      toast.success(`Email sent to ${lead.full_name}. Follow-ups are scheduled.`)
+      toast.success(
+        result.scheduledFor
+          ? `Scheduled for ${result.scheduledFor} (their time). It sends automatically.`
+          : `Email sent to ${lead.full_name}. Follow-ups are scheduled.`,
+      )
       setDraft(null)
       onSent?.()
       router.refresh()
@@ -149,13 +166,13 @@ export function EmailComposer({
                 </Button>
                 <Button variant="brand" size="sm" onClick={send} disabled={sending || !mailReady}>
                   {sending ? <Spinner className="size-3.5" /> : <Send className="size-3.5" />}
-                  Send this email
+                  {sendLabel}
                 </Button>
               </div>
             ) : null}
             <p className="text-[11px] text-muted-foreground">
               {mailReady
-                ? `Sends to ${lead.email}. If they don't reply, Claude writes two follow-ups in the same thread.`
+                ? `${openNow ? 'Sends' : 'Goes out on schedule'} to ${lead.email}. If they don't reply, Claude writes two follow-ups in the same thread (weekdays, business hours).`
                 : 'Connect a mailbox (EMAIL_USER / EMAIL_APP_PASSWORD) to send this.'}
             </p>
           </div>

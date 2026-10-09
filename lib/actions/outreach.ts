@@ -3,12 +3,21 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { canWrite, requireSession } from '@/lib/auth'
-import { BATCH_SIZE } from '@/lib/outreach/config'
-import { previewOutreach, replyToThread, runOutreachCycle, startOutreach } from '@/lib/outreach/engine'
+import {
+  canSendNow,
+  cancelQueued,
+  previewOutreach,
+  queueOutreach,
+  replyToThread,
+  runOutreachCycle,
+  startOutreach,
+} from '@/lib/outreach/engine'
 import { mailConfigured, testMailConnection } from '@/lib/outreach/mailer'
 import { createClient } from '@/lib/supabase/server'
 
 type SendResult = { ok: true } | { ok: false; error: string }
+/** Sent now, or scheduled for the lead's next business-hours window. */
+type SendOrScheduleResult = { ok: true; scheduledFor: string | null } | { ok: false; error: string }
 
 function refresh() {
   revalidatePath('/outreach')
@@ -33,13 +42,14 @@ export async function previewOutreachEmail(leadId: string, force = false) {
 }
 
 /**
- * Sends the first email. With `draft`, sends exactly what the rep reviewed;
- * without it, Claude writes one on the spot (the one-click path).
+ * Sends the first email now if it's business hours where the lead is;
+ * otherwise schedules it for their next weekday morning. With `draft`, that
+ * exact email goes out; without it, Claude writes one from the script.
  */
 export async function sendOutreach(
   leadId: string,
   draft?: { subject: string; body: string },
-): Promise<SendResult> {
+): Promise<SendOrScheduleResult> {
   const session = await requireSession()
   if (!canWrite(session.role)) return { ok: false, error: 'Viewers cannot send email.' }
 
@@ -51,6 +61,25 @@ export async function sendOutreach(
   }
 
   const supabase = await createClient()
+  const { data: place } = await supabase
+    .from('leads')
+    .select('location, city, country')
+    .eq('id', leadId)
+    .eq('org_id', session.organization.id)
+    .maybeSingle()
+  if (!place) return { ok: false, error: 'Lead not found.' }
+
+  if (!canSendNow(place)) {
+    const queued = await queueOutreach(supabase, {
+      orgId: session.organization.id,
+      leadId,
+      by: session.userId,
+      draft: reviewed,
+    })
+    refresh()
+    return queued.ok ? { ok: true, scheduledFor: queued.label } : queued
+  }
+
   const result = await startOutreach(supabase, {
     orgId: session.organization.id,
     leadId,
@@ -59,44 +88,42 @@ export async function sendOutreach(
   })
 
   refresh()
-  return result
+  return result.ok ? { ok: true, scheduledFor: null } : result
 }
 
-/** Sends first emails one after another; capped so the request fits the time limit. */
-export async function sendOutreachBatch(leadIds: string[]) {
+/** Puts leads in the send queue; the scheduler sends up to the daily target in business hours. */
+export async function scheduleOutreachBatch(leadIds: string[]) {
   const session = await requireSession()
-  if (!canWrite(session.role)) return { sent: 0, skipped: 0, errors: ['Viewers cannot send email.'] }
+  if (!canWrite(session.role)) return { queued: 0, errors: ['Viewers cannot send email.'] }
 
   const supabase = await createClient()
-  let sent = 0
-  let skipped = 0
+  let queued = 0
   const errors: string[] = []
-
-  for (const leadId of leadIds.slice(0, BATCH_SIZE)) {
-    const result = await startOutreach(supabase, {
-      orgId: session.organization.id,
-      leadId,
-      userId: session.userId,
-    })
-    if (result.ok) {
-      sent++
-    } else if (result.error.startsWith('Skipped')) {
-      skipped++
-    } else {
-      errors.push(result.error)
-      // No point burning Claude credits on the rest once the cap is hit.
-      if (result.error.startsWith('Daily send limit') || result.error.startsWith('Email is not connected')) break
-    }
+  for (const leadId of leadIds.slice(0, 500)) {
+    const result = await queueOutreach(supabase, { orgId: session.organization.id, leadId, by: session.userId })
+    if (result.ok) queued++
+    else errors.push(result.error)
   }
 
   refresh()
-  return { sent, skipped, errors }
+  return { queued, errors }
+}
+
+export async function cancelScheduledOutreach(leadId: string): Promise<SendResult> {
+  const session = await requireSession()
+  if (!canWrite(session.role)) return { ok: false, error: 'Viewers cannot change outreach.' }
+
+  const supabase = await createClient()
+  await cancelQueued(supabase, { orgId: session.organization.id, leadId })
+  refresh()
+  revalidatePath(`/targeting/${leadId}`)
+  return { ok: true }
 }
 
 /** Checks the inbox for replies, then sends any follow-ups that are due. */
 export async function syncOutreach() {
   const session = await requireSession()
-  if (!canWrite(session.role)) return { replies: 0, bounces: 0, followUps: 0, errors: [] }
+  if (!canWrite(session.role)) return { replies: 0, bounces: 0, followUps: 0, firsts: 0, errors: [] }
 
   const supabase = await createClient()
   const result = await runOutreachCycle(supabase, session.organization.id)

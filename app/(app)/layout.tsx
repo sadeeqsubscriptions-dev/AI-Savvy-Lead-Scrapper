@@ -14,6 +14,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
   return (
     <AppShell
       user={{
+        id: session.userId,
         name: session.profile.full_name ?? session.email,
         email: session.email,
         role: session.role,

@@ -12,12 +12,16 @@ import {
   Target,
 } from 'lucide-react'
 import { TrendChart } from '@/components/charts/trend-chart'
+import { RepliesCard, type RecentReply } from '@/components/outreach/replies-card'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge, leadStatusColor } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, EmptyState } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { requireSession } from '@/lib/auth'
+import { senderConfig } from '@/lib/outreach/config'
+import { sentToday } from '@/lib/outreach/engine'
+import { createClient } from '@/lib/supabase/server'
 import { LEAD_STATUSES } from '@/lib/constants'
 import { formatCurrency, formatDelta, formatNumber, formatPercent, formatRelative, formatTime, greetingFor } from '@/lib/format'
 import {
@@ -35,14 +39,46 @@ export default async function DashboardPage() {
   const session = await requireSession()
   const orgId = session.organization.id
 
-  const [metrics, trend, activity, team, meetings, statusCounts] = await Promise.all([
+  const supabase = await createClient()
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  const [metrics, trend, activity, team, meetings, statusCounts, replyRows, scheduledRows, newToday] = await Promise.all([
     getDashboardMetrics(orgId),
     getLeadTrend(orgId, 30),
     getRecentActivity(orgId, 6),
     getTeamPerformance(orgId),
     getUpcomingMeetings(orgId, 4),
     getLeadStatusCounts(orgId),
+    supabase
+      .from('outreach_messages')
+      .select('body, sent_at, thread:outreach_threads(lead_id, lead:leads(id, full_name, company))')
+      .eq('org_id', orgId)
+      .eq('direction', 'inbound')
+      .gte('sent_at', weekAgo)
+      .order('sent_at', { ascending: false })
+      .limit(8),
+    supabase
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .not('metadata->outreach_queue', 'is', null),
+    sentToday(supabase, true),
   ])
+
+  type ReplyRow = {
+    body: string
+    sent_at: string
+    thread: { lead_id: string; lead: { id: string; full_name: string; company: string | null } | null } | null
+  }
+  const replies: RecentReply[] = ((replyRows.data as unknown as ReplyRow[] | null) ?? [])
+    .filter((row) => row.thread?.lead)
+    .map((row) => ({
+      leadId: row.thread!.lead!.id,
+      name: row.thread!.lead!.full_name,
+      company: row.thread!.lead!.company,
+      text: row.body,
+      at: row.sent_at,
+    }))
 
   const firstName = (session.profile.full_name ?? session.email).split(' ')[0].split('@')[0]
   const closedTotal = metrics.won_leads + metrics.lost_leads
@@ -113,6 +149,13 @@ export default async function DashboardPage() {
           </Link>
         </div>
       </section>
+
+      <RepliesCard
+        replies={replies}
+        scheduled={scheduledRows.count ?? 0}
+        sentToday={newToday}
+        dailyTarget={senderConfig().dailyNew}
+      />
 
       {metrics.total_leads === 0 ? (
         <Card className="border-primary/30 bg-primary/[0.05]">

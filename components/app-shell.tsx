@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { LogoMark } from '@/components/brand'
 import { GlobalSearch } from '@/components/global-search'
+import { NotificationBell } from '@/components/notification-bell'
 import { useTheme } from '@/components/theme-provider'
 import { Avatar } from '@/components/ui/avatar'
 import { Progress } from '@/components/ui/progress'
@@ -61,7 +62,7 @@ export function AppShell({
   usage,
 }: {
   children: React.ReactNode
-  user: { name: string; email: string; role: MemberRole }
+  user: { id: string; name: string; email: string; role: MemberRole }
   organization: { id: string; name: string }
   usage: { used: number; quota: number }
 }) {
@@ -201,6 +202,7 @@ export function AppShell({
           </div>
 
           <div className="flex items-center gap-1.5">
+            <NotificationBell userId={user.id} />
             <button
               type="button"
               className="rounded-lg p-2 text-muted-foreground transition-all duration-300 hover:bg-secondary hover:text-foreground active:scale-90"
