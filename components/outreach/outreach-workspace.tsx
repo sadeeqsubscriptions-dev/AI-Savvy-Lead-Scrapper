@@ -2,8 +2,21 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { AlertTriangle, Inbox, MailCheck, MessageSquareReply, PlugZap, RefreshCw, Send, Users } from 'lucide-react'
+import {
+  AlertTriangle,
+  Ban,
+  ChevronRight,
+  Inbox,
+  MailCheck,
+  MessageSquareReply,
+  PlugZap,
+  RefreshCw,
+  Send,
+  Users,
+} from 'lucide-react'
 import { checkEmailConnection, sendOutreach, sendOutreachBatch, syncOutreach } from '@/lib/actions/outreach'
+import type { DraftEmail } from '@/lib/outreach/compose'
+import { ineligibleReason } from '@/lib/outreach/eligibility'
 import type { OutreachLead, OutreachThreadWithMessages } from '@/lib/queries'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -14,9 +27,10 @@ import { Card, EmptyState, SectionHeading } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
 import { Spinner } from '@/components/ui/progress'
 import { toast } from '@/components/ui/toaster'
+import { LeadEmailDrawer } from './lead-email-drawer'
 import { OutreachDrawer, outreachStatusLabel, outreachStatusTone } from './outreach-drawer'
 
-type Tab = 'ready' | 'active' | 'replied' | 'done'
+type Tab = 'ready' | 'active' | 'replied' | 'done' | 'skipped'
 
 export function OutreachWorkspace({
   leads,
@@ -36,6 +50,9 @@ export function OutreachWorkspace({
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('ready')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [previewLeadId, setPreviewLeadId] = useState<string | null>(null)
+  // Drafts survive closing the drawer, so reopening a lead doesn't pay for a rewrite.
+  const [drafts, setDrafts] = useState<Record<string, DraftEmail>>({})
   const [sendingLead, setSendingLead] = useState<string | null>(null)
   const [confirmBulk, setConfirmBulk] = useState(false)
   const [syncing, startSync] = useTransition()
@@ -45,7 +62,10 @@ export function OutreachWorkspace({
 
   const leadById = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads])
   const contacted = useMemo(() => new Set(threads.map((thread) => thread.lead_id)), [threads])
-  const ready = leads.filter((lead) => !contacted.has(lead.id))
+  const uncontacted = leads.filter((lead) => !contacted.has(lead.id))
+  const flags = useMemo(() => new Map(leads.map((lead) => [lead.id, ineligibleReason(lead)])), [leads])
+  const ready = uncontacted.filter((lead) => !flags.get(lead.id))
+  const skipped = uncontacted.filter((lead) => flags.get(lead.id))
 
   const groups = {
     active: threads.filter((thread) => thread.status === 'active'),
@@ -59,6 +79,7 @@ export function OutreachWorkspace({
   const remaining = Math.max(0, mail.dailyLimit - mail.sentToday)
   const canEmail = canSend && mail.configured
   const selected = threads.find((thread) => thread.id === selectedId) ?? null
+  const previewLead = previewLeadId && !contacted.has(previewLeadId) ? (leadById.get(previewLeadId) ?? null) : null
 
   const sync = (silent = false) => {
     startSync(async () => {
@@ -108,7 +129,12 @@ export function OutreachWorkspace({
     const ids = ready.slice(0, Math.min(batchSize, remaining)).map((lead) => lead.id)
     startSend(async () => {
       const result = await sendOutreachBatch(ids)
-      if (result.sent > 0) toast.success(`Sent ${result.sent} email${result.sent === 1 ? '' : 's'}.`)
+      if (result.sent > 0 || result.skipped > 0) {
+        toast.success(
+          `Sent ${result.sent} email${result.sent === 1 ? '' : 's'}` +
+            (result.skipped > 0 ? `, skipped ${result.skipped} that Claude judged not a fit.` : '.'),
+        )
+      }
       if (result.errors.length > 0) toast.error(result.errors[0])
       router.refresh()
     })
@@ -128,9 +154,11 @@ export function OutreachWorkspace({
     { key: 'active', label: 'In sequence', count: groups.active.length },
     { key: 'replied', label: 'Replied', count: groups.replied.length },
     { key: 'done', label: 'Finished', count: groups.done.length },
+    { key: 'skipped', label: 'Not a fit', count: skipped.length },
   ]
 
-  const threadRows = tab === 'ready' ? [] : groups[tab]
+  const threadRows = tab === 'ready' || tab === 'skipped' ? [] : groups[tab]
+  const leadRows = tab === 'ready' ? ready : skipped
 
   return (
     <div className="mx-auto max-w-[1200px] space-y-5">
@@ -210,32 +238,52 @@ export function OutreachWorkspace({
           ))}
         </div>
 
-        {tab === 'ready' ? (
-          ready.length === 0 ? (
+        {tab === 'ready' || tab === 'skipped' ? (
+          leadRows.length === 0 ? (
             <EmptyState
-              icon={Users}
-              title="No leads waiting"
-              description="Leads with an email address appear here after you scrape or add them. Everyone with an email has already been contacted."
+              icon={tab === 'ready' ? Users : Ban}
+              title={tab === 'ready' ? 'No leads waiting' : 'Nothing screened out'}
+              description={
+                tab === 'ready'
+                  ? 'Leads with an email address appear here after you scrape or add them. Everyone with an email has already been contacted.'
+                  : 'Government offices, article titles and department inboxes land here instead of getting emailed.'
+              }
             />
           ) : (
             <ul className="divide-y divide-border">
-              {ready.map((lead) => (
-                <li key={lead.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
+              {tab === 'skipped' ? (
+                <li className="bg-secondary/30 px-4 py-2.5 text-xs text-muted-foreground">
+                  These won&apos;t be emailed automatically. Open one to see why, or write an email anyway.
+                </li>
+              ) : null}
+              {leadRows.map((lead) => (
+                <li key={lead.id} className="flex flex-col gap-3 p-4 transition-colors hover:bg-secondary/40 sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewLeadId(lead.id)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                  >
                     <Avatar name={lead.full_name} />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{lead.full_name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {[lead.company, lead.industry].filter(Boolean).join(' · ') || lead.source}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="truncate font-mono text-xs text-muted-foreground sm:w-56">{lead.email}</span>
-                  <ScoreBadge score={lead.score} />
-                  {canEmail ? (
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{lead.full_name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {tab === 'skipped'
+                          ? flags.get(lead.id)
+                          : drafts[lead.id]
+                            ? `Draft ready · pitching ${drafts[lead.id].service}`
+                            : [lead.company, lead.industry].filter(Boolean).join(' · ') || lead.source}
+                      </span>
+                    </span>
+                    <span className="hidden truncate font-mono text-xs text-muted-foreground sm:block sm:w-56">
+                      {lead.email}
+                    </span>
+                    <ScoreBadge score={lead.score} />
+                    <ChevronRight className="hidden size-4 text-muted-foreground sm:block" />
+                  </button>
+                  {canEmail && tab === 'ready' ? (
                     <Button size="sm" onClick={() => sendOne(lead)} disabled={sending} className="sm:w-28">
                       {sendingLead === lead.id ? <Spinner className="size-3.5" /> : <Send className="size-3.5" />}
-                      {sendingLead === lead.id ? 'Writing…' : 'Send email'}
+                      {sendingLead === lead.id ? 'Writing…' : 'Send now'}
                     </Button>
                   ) : null}
                 </li>
@@ -338,6 +386,26 @@ export function OutreachWorkspace({
         canSend={canSend}
         webmailUrl={mail.webmailUrl}
         onClose={() => setSelectedId(null)}
+      />
+
+      <LeadEmailDrawer
+        key={previewLead?.id}
+        lead={previewLead}
+        flagged={previewLead ? (flags.get(previewLead.id) ?? null) : null}
+        draft={previewLead ? (drafts[previewLead.id] ?? null) : null}
+        onDraft={(draft) => {
+          if (!previewLead) return
+          const id = previewLead.id
+          setDrafts((current) => {
+            const next = { ...current }
+            if (draft) next[id] = draft
+            else delete next[id]
+            return next
+          })
+        }}
+        canWrite={canSend}
+        mailReady={mail.configured}
+        onClose={() => setPreviewLeadId(null)}
       />
     </div>
   )

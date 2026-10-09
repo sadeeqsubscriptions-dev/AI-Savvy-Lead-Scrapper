@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Lead, OutreachThread } from '@/lib/supabase/types'
-import { composeEmail, signature, type PriorEmail } from './compose'
+import { composeEmail, signature, type DraftEmail, type PriorEmail } from './compose'
 import { FOLLOW_UP_DELAYS_DAYS, TOTAL_STEPS, senderConfig } from './config'
+import { ineligibleReason } from './eligibility'
 import {
   mailConfigured,
   messageIdsIn,
@@ -59,21 +60,60 @@ async function logActivity(
 
 // ─── First email ────────────────────────────────────────────────────────────
 
+async function loadLead(supabase: Client, orgId: string, leadId: string) {
+  const { data } = await supabase.from('leads').select('*').eq('id', leadId).eq('org_id', orgId).maybeSingle()
+  return data
+}
+
+/** Saves Claude's "not a fit" verdict so the lead leaves the Ready list. */
+async function markNotAFit(supabase: Client, lead: Lead, reason: string) {
+  const metadata = lead.metadata && typeof lead.metadata === 'object' && !Array.isArray(lead.metadata) ? lead.metadata : {}
+  await supabase
+    .from('leads')
+    .update({ metadata: { ...metadata, outreach_skip: { reason, at: new Date().toISOString() } } })
+    .eq('id', lead.id)
+}
+
+/** Writes the first email without sending it, so a rep can read and edit it. */
+export async function previewOutreach(
+  supabase: Client,
+  { orgId, leadId, force = false }: { orgId: string; leadId: string; force?: boolean },
+): Promise<{ ok: true; email: DraftEmail } | { ok: false; error: string; notAFit?: string }> {
+  const lead = await loadLead(supabase, orgId, leadId)
+  if (!lead) return { ok: false, error: 'Lead not found.' }
+  if (!lead.email) return { ok: false, error: `${lead.full_name} has no email address.` }
+
+  const draft = await composeEmail(lead, 0, [], { force })
+  if (!draft.ok && draft.notAFit) await markNotAFit(supabase, lead, draft.notAFit)
+  return draft
+}
+
 export async function startOutreach(
   supabase: Client,
-  { orgId, leadId, userId }: { orgId: string; leadId: string; userId: string },
+  {
+    orgId,
+    leadId,
+    userId,
+    draft: reviewed,
+    force = false,
+  }: {
+    orgId: string
+    leadId: string
+    userId: string
+    /** A preview the rep read (and maybe edited); skips writing a new one. */
+    draft?: { subject: string; body: string }
+    /** The rep chose to email a lead the screening flagged. */
+    force?: boolean
+  },
 ): Promise<Result> {
   if (!mailConfigured()) return { ok: false, error: 'Email is not connected. Set EMAIL_USER and EMAIL_APP_PASSWORD.' }
 
-  const { data: lead } = await supabase
-    .from('leads')
-    .select('*')
-    .eq('id', leadId)
-    .eq('org_id', orgId)
-    .maybeSingle()
+  const lead = await loadLead(supabase, orgId, leadId)
 
   if (!lead) return { ok: false, error: 'Lead not found.' }
   if (!lead.email) return { ok: false, error: `${lead.full_name} has no email address.` }
+  const flagged = ineligibleReason(lead)
+  if (flagged && !force && !reviewed) return { ok: false, error: `Skipped ${lead.full_name}: ${flagged}` }
   if ((await remainingToday(supabase)) <= 0) {
     return { ok: false, error: `Daily send limit (${senderConfig().dailyLimit}) reached. Try again tomorrow.` }
   }
@@ -98,8 +138,17 @@ export async function startOutreach(
     return { ok: false, error }
   }
 
-  const draft = await composeEmail(lead, 0)
-  if (!draft.ok) return release(draft.error)
+  let draft: { ok: true; email: { subject: string; body: string } }
+  if (reviewed) {
+    draft = { ok: true, email: { subject: reviewed.subject.trim(), body: reviewed.body.trim() } }
+  } else {
+    const written = await composeEmail(lead, 0, [], { force })
+    if (!written.ok) {
+      if (written.notAFit) await markNotAFit(supabase, lead, written.notAFit)
+      return release(written.error)
+    }
+    draft = written
+  }
 
   const messageId = newMessageId()
   try {

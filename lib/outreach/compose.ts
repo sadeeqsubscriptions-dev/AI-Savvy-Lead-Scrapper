@@ -3,43 +3,58 @@ import { z } from 'zod'
 import type { Lead } from '@/lib/supabase/types'
 import { COMPANY, TOTAL_STEPS, senderConfig } from './config'
 
-// Short, single-shot writing: low effort keeps each email to a few cents.
+// Medium effort: one email is short, but picking the right angle from the
+// prospect's own site is where the quality comes from.
 const MODEL = 'claude-opus-5-5'
+const SERVICE_NAMES = COMPANY.services.map((service) => service.name)
 
 const emailSchema = z.object({
-  subject: z.string().min(1).max(120),
-  body: z.string().min(20),
+  fit: z.boolean(),
+  skip_reason: z.string(),
+  service: z.string(),
+  why: z.string(),
+  subject: z.string().max(120),
+  body: z.string(),
 })
 
-export type DraftEmail = z.infer<typeof emailSchema>
+export type DraftEmail = { subject: string; body: string; service: string; why: string }
 
 export type PriorEmail = { direction: 'outbound' | 'inbound'; subject: string; body: string; sent_at: string }
 
-type ComposeResult = { ok: true; email: DraftEmail } | { ok: false; error: string }
+export type ComposeResult =
+  | { ok: true; email: DraftEmail }
+  | { ok: false; error: string; notAFit?: string }
 
 function systemPrompt() {
   const sender = senderConfig()
-  return `You write cold outreach emails for ${COMPANY.name} (${COMPANY.website}), in the first person as ${sender.name} (${sender.title}).
+  return `You are a senior sales development rep writing cold outreach for ${COMPANY.name} (${COMPANY.website}). You write in the first person as ${sender.name} (${sender.title}).
 
 About ${COMPANY.name}: ${COMPANY.positioning}
-Founder: ${COMPANY.founder} You may mention the founder's experience, but you are writing as ${sender.name}, not as the founder (unless they are the same person).
+Founder: ${COMPANY.founder} You may mention the founder's 22+ years of software experience as credibility, but you are writing as ${sender.name}.
 
-Services you can offer (pick the one or two that genuinely fit this prospect — never list them all):
+Services (choose exactly ONE — the one this specific business most obviously needs):
 ${COMPANY.services.map((service) => `- ${service.name}: ${service.pitch}`).join('\n')}
 
-The single call to action is a free 15-minute call: ${COMPANY.bookingUrl}
+Goal of every email: book a free 15-minute call. Booking link: ${COMPANY.bookingUrl}
 
-How to write:
-- Plain text only. No markdown, no bullet symbols, no bold, no emojis.
-- Short: 60-120 words for a first email, 40-80 for a follow-up. Short paragraphs.
-- Open with something specific to their business, industry or location — never "I hope this email finds you well".
-- Name a concrete, believable way AI could save them time (e.g. a dental clinic: a WhatsApp bot that books appointments after hours). Tie it to the service you chose.
-- Never invent facts about the prospect, fake results, clients, or statistics. If you know little, stay general about their industry.
-- If the lead's name looks like a business rather than a person, greet the team ("Hi there," or "Hi {Company} team,"). Otherwise use their first name.
-- Sound like a real person writing one email, not a marketing blast. No hype words ("revolutionize", "game-changer", "cutting-edge").
-- End with a soft one-line ask that includes the booking link, then a final line letting them opt out, e.g. "If this isn't relevant, just reply 'no thanks' and I won't follow up."
-- Do NOT write a signature or sign-off name — it is appended automatically.
-- Subject: under 7 words, lowercase-friendly, specific, no clickbait, no "Re:".`
+STEP 1 — Qualify. Decide whether this lead is a real private business that could buy AI services. Set fit=false and explain in skip_reason for: government agencies, schools, patient-appeal or claims departments, large national corporations, directories, news or article pages, job boards, or when you cannot tell what the business does. When fit=false, return empty strings for subject and body.
+
+STEP 2 — Research. If a website is given, fetch it (one or two pages at most) to learn what they actually do, who their customers are, and how customers contact or book them. Base the email on what you find.
+
+STEP 3 — Write like a top-performing SDR:
+- Opening line: a specific, true observation about THEIR business from the website or lead data (a service they offer, how customers book, the area they serve). Never "I hope this finds you well", never "I came across your website".
+- Then the problem: one likely time-sink for a business like theirs (answering the same questions by phone, chasing leads by hand, booking appointments manually, and so on).
+- Then the offer: the ONE service you chose, framed as a concrete outcome for them ("a WhatsApp assistant that answers pricing questions and books jobs after hours"). One sentence of credibility at most.
+- Make it interactive: include one easy question they can answer in a reply (e.g. "Are most of your bookings still coming in by phone?").
+- Close: ask for 15 minutes this week, with the booking link on its own line.
+- Last line: "If this isn't relevant, just reply 'no thanks' and I won't follow up."
+- 90-140 words. Plain text, short paragraphs, no markdown, no bullets, no emojis, no hype words (revolutionize, game-changer, cutting-edge, leverage, synergy).
+- Greeting: first name if the lead is clearly a person; otherwise "Hi {Company} team,".
+- Never invent facts, clients, results or statistics. If the website gave you nothing, be specific to their industry instead.
+- No signature or sign-off name — it is appended automatically.
+- Subject: 3-6 words, specific to them, lowercase is fine, no clickbait, no "Re:".
+
+Also return service (the exact name of the one service you chose) and why (one sentence, for the sales rep, on why this service fits this business).`
 }
 
 function leadFacts(lead: Lead) {
@@ -50,6 +65,7 @@ function leadFacts(lead: Lead) {
     lead.title ? `Title: ${lead.title}` : null,
     lead.industry ? `Industry: ${lead.industry}` : null,
     lead.website ? `Website: ${lead.website}` : null,
+    lead.email ? `Email: ${lead.email}` : null,
     lead.location || lead.city
       ? `Location: ${lead.location ?? lead.city}${lead.country ? `, ${lead.country}` : ''}`
       : null,
@@ -62,12 +78,15 @@ function leadFacts(lead: Lead) {
     .join('\n')
 }
 
-function buildRequest(lead: Lead, step: number, history: PriorEmail[]) {
+function buildRequest(lead: Lead, step: number, history: PriorEmail[], force: boolean) {
   const facts = leadFacts(lead)
 
   if (step === 0) {
+    const override = force
+      ? '\nThe sales rep reviewed this lead and wants to email it regardless, so set fit=true and write the best email you can.\n'
+      : ''
     return `Write the FIRST cold email to this prospect.
-
+${override}
 Prospect:
 ${facts}`
   }
@@ -86,58 +105,78 @@ Emails sent so far:
 ${thread}
 
 Rules for this follow-up:
-- Do not repeat the previous email. Add one new angle: a different service that fits, or a different concrete example of time saved.
+- 40-80 words. Do not repeat the previous email. Add one new angle: a different concrete example of time saved, or a second service that fits.
 - Do not guilt-trip ("just bumping this", "did you see my email").
+- Keep one easy question and the booking link.
 ${isLast ? '- This is the final follow-up: say politely this is the last note, and leave the door open.' : ''}
-- The subject field will be ignored (the email goes in the same thread), so just repeat the original subject.`
+- The subject is ignored (the email goes in the same thread), so repeat the original subject.
+- Set fit=true and skip_reason to an empty string; the lead is already qualified.`
 }
 
 export function signature() {
   const sender = senderConfig()
-  return [
-    '',
-    sender.name,
-    sender.title,
-    COMPANY.website,
-    sender.postalAddress,
-  ]
+  return ['', sender.name, sender.title, COMPANY.website, sender.postalAddress]
     .filter((line) => line !== null)
     .join('\n')
 }
 
-export async function composeEmail(lead: Lead, step: number, history: PriorEmail[] = []): Promise<ComposeResult> {
+export async function composeEmail(
+  lead: Lead,
+  step: number,
+  history: PriorEmail[] = [],
+  { force = false }: { force?: boolean } = {},
+): Promise<ComposeResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return { ok: false, error: 'ANTHROPIC_API_KEY is not set.' }
 
   const client = new Anthropic({ apiKey })
+  // Reading the prospect's own site is what makes the opener specific. Web
+  // fetch only opens URLs already in the prompt, so it stays on their domain.
+  const tools: Anthropic.Beta.BetaToolUnion[] = lead.website
+    ? [{ type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 2, max_content_tokens: 8000 }]
+    : []
+  const messages: Anthropic.Beta.BetaMessageParam[] = [
+    { role: 'user', content: buildRequest(lead, step, history, force) },
+  ]
 
-  let response
+  let response: Anthropic.Beta.BetaMessage | undefined
   try {
-    response = await client.beta.messages.create({
-      model: MODEL,
-      max_tokens: 4000,
-      // If a safety classifier declines, the API retries on a fallback model
-      // inside the same call instead of failing the send.
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      output_config: {
-        effort: 'low',
-        format: {
-          type: 'json_schema',
-          schema: {
-            type: 'object',
-            properties: {
-              subject: { type: 'string', description: 'Email subject line' },
-              body: { type: 'string', description: 'Plain-text email body, without a signature' },
+    for (let turn = 0; turn < 3; turn++) {
+      response = await client.beta.messages.create({
+        model: MODEL,
+        max_tokens: 6000,
+        // If a safety classifier declines, the API retries on a fallback model
+        // inside the same call instead of failing the send.
+        betas: ['server-side-fallback-2026-07-01'],
+        fallbacks: 'default',
+        tools,
+        output_config: {
+          effort: 'medium',
+          format: {
+            type: 'json_schema',
+            schema: {
+              type: 'object',
+              properties: {
+                fit: { type: 'boolean', description: 'Is this a real business worth emailing?' },
+                skip_reason: { type: 'string', description: 'Why not, when fit is false; otherwise empty' },
+                service: { type: 'string', enum: SERVICE_NAMES, description: 'The one service pitched' },
+                why: { type: 'string', description: 'One sentence for the rep on why this service fits' },
+                subject: { type: 'string', description: 'Email subject line' },
+                body: { type: 'string', description: 'Plain-text email body, without a signature' },
+              },
+              required: ['fit', 'skip_reason', 'service', 'why', 'subject', 'body'],
+              additionalProperties: false,
             },
-            required: ['subject', 'body'],
-            additionalProperties: false,
           },
         },
-      },
-      system: systemPrompt(),
-      messages: [{ role: 'user', content: buildRequest(lead, step, history) }],
-    })
+        system: systemPrompt(),
+        messages,
+      })
+
+      // A turn with server tools can pause mid-research; resume it.
+      if (response.stop_reason !== 'pause_turn') break
+      messages.push({ role: 'assistant', content: response.content })
+    }
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError) {
       return { ok: false, error: 'Claude rejected the API key. Check ANTHROPIC_API_KEY.' }
@@ -148,11 +187,11 @@ export async function composeEmail(lead: Lead, step: number, history: PriorEmail
     return { ok: false, error: error instanceof Error ? error.message : 'Claude request failed.' }
   }
 
-  if (response.stop_reason === 'refusal') {
-    return { ok: false, error: 'Claude declined to write this email.' }
-  }
+  if (!response) return { ok: false, error: 'Claude returned no email.' }
+  if (response.stop_reason === 'refusal') return { ok: false, error: 'Claude declined to write this email.' }
 
-  const textBlock = response.content.find((block) => block.type === 'text')
+  // The JSON answer is the last text block; earlier ones narrate the research.
+  const textBlock = [...response.content].reverse().find((block) => block.type === 'text')
   if (!textBlock || textBlock.type !== 'text') return { ok: false, error: 'Claude returned no email.' }
 
   let parsedJson: unknown
@@ -165,8 +204,22 @@ export async function composeEmail(lead: Lead, step: number, history: PriorEmail
   const parsed = emailSchema.safeParse(parsedJson)
   if (!parsed.success) return { ok: false, error: 'The generated email was incomplete.' }
 
+  const draft = parsed.data
+  if (!draft.fit && !force && step === 0) {
+    const reason = draft.skip_reason.trim() || 'Not a good fit for AI Savvy.'
+    return { ok: false, error: `Skipped: ${reason}`, notAFit: reason }
+  }
+  if (draft.subject.trim().length === 0 || draft.body.trim().length < 20) {
+    return { ok: false, error: 'The generated email was incomplete.' }
+  }
+
   return {
     ok: true,
-    email: { subject: parsed.data.subject.trim(), body: `${parsed.data.body.trim()}\n${signature()}` },
+    email: {
+      subject: draft.subject.trim(),
+      body: `${draft.body.trim()}\n${signature()}`,
+      service: draft.service,
+      why: draft.why.trim(),
+    },
   }
 }

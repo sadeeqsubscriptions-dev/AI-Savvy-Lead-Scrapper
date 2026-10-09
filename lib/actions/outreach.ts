@@ -1,9 +1,10 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 import { canWrite, requireSession } from '@/lib/auth'
 import { BATCH_SIZE } from '@/lib/outreach/config'
-import { replyToThread, runOutreachCycle, startOutreach } from '@/lib/outreach/engine'
+import { previewOutreach, replyToThread, runOutreachCycle, startOutreach } from '@/lib/outreach/engine'
 import { mailConfigured, testMailConnection } from '@/lib/outreach/mailer'
 import { createClient } from '@/lib/supabase/server'
 
@@ -15,15 +16,46 @@ function refresh() {
   revalidatePath('/dashboard')
 }
 
-export async function sendOutreach(leadId: string): Promise<SendResult> {
+const draftSchema = z.object({
+  subject: z.string().trim().min(1, 'Add a subject line.').max(150),
+  body: z.string().trim().min(20, 'The email is too short.').max(5000),
+})
+
+/** Claude writes the first email for review; nothing is sent. */
+export async function previewOutreachEmail(leadId: string, force = false) {
+  const session = await requireSession()
+  if (!canWrite(session.role)) return { ok: false as const, error: 'Viewers cannot write email.' }
+
+  const supabase = await createClient()
+  const result = await previewOutreach(supabase, { orgId: session.organization.id, leadId, force })
+  if (!result.ok && result.notAFit) revalidatePath('/outreach')
+  return result
+}
+
+/**
+ * Sends the first email. With `draft`, sends exactly what the rep reviewed;
+ * without it, Claude writes one on the spot (the one-click path).
+ */
+export async function sendOutreach(
+  leadId: string,
+  draft?: { subject: string; body: string },
+): Promise<SendResult> {
   const session = await requireSession()
   if (!canWrite(session.role)) return { ok: false, error: 'Viewers cannot send email.' }
+
+  let reviewed: { subject: string; body: string } | undefined
+  if (draft) {
+    const parsed = draftSchema.safeParse(draft)
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid email.' }
+    reviewed = parsed.data
+  }
 
   const supabase = await createClient()
   const result = await startOutreach(supabase, {
     orgId: session.organization.id,
     leadId,
     userId: session.userId,
+    draft: reviewed,
   })
 
   refresh()
@@ -33,10 +65,11 @@ export async function sendOutreach(leadId: string): Promise<SendResult> {
 /** Sends first emails one after another; capped so the request fits the time limit. */
 export async function sendOutreachBatch(leadIds: string[]) {
   const session = await requireSession()
-  if (!canWrite(session.role)) return { sent: 0, errors: ['Viewers cannot send email.'] }
+  if (!canWrite(session.role)) return { sent: 0, skipped: 0, errors: ['Viewers cannot send email.'] }
 
   const supabase = await createClient()
   let sent = 0
+  let skipped = 0
   const errors: string[] = []
 
   for (const leadId of leadIds.slice(0, BATCH_SIZE)) {
@@ -47,6 +80,8 @@ export async function sendOutreachBatch(leadIds: string[]) {
     })
     if (result.ok) {
       sent++
+    } else if (result.error.startsWith('Skipped')) {
+      skipped++
     } else {
       errors.push(result.error)
       // No point burning Claude credits on the rest once the cap is hit.
@@ -55,7 +90,7 @@ export async function sendOutreachBatch(leadIds: string[]) {
   }
 
   refresh()
-  return { sent, errors }
+  return { sent, skipped, errors }
 }
 
 /** Checks the inbox for replies, then sends any follow-ups that are due. */

@@ -334,7 +334,8 @@ export async function getPendingRecordCount(orgId: string) {
 
 export type OutreachLead = Pick<
   Lead,
-  'id' | 'full_name' | 'company' | 'title' | 'email' | 'industry' | 'score' | 'status' | 'source' | 'created_at'
+  | 'id' | 'full_name' | 'company' | 'title' | 'email' | 'industry' | 'score' | 'status'
+  | 'source' | 'created_at' | 'website' | 'phone' | 'location' | 'city' | 'country' | 'metadata'
 >
 export type OutreachThreadWithMessages = OutreachThread & { messages: OutreachMessage[] }
 
@@ -345,7 +346,9 @@ export async function getOutreachBoard(orgId: string) {
   const [{ data: leads }, { data: threads }] = await Promise.all([
     supabase
       .from('leads')
-      .select('id, full_name, company, title, email, industry, score, status, source, created_at')
+      .select(
+        'id, full_name, company, title, email, industry, score, status, source, created_at, website, phone, location, city, country, metadata',
+      )
       .eq('org_id', orgId)
       .not('email', 'is', null)
       .neq('email', '')
