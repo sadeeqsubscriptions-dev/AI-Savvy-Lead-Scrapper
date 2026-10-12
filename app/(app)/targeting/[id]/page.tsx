@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation'
 import { currentBrief } from '@/lib/ai/brief-shape'
 import { canWrite, requireSession } from '@/lib/auth'
 import { ineligibleReason, isDemoLead } from '@/lib/outreach/eligibility'
-import { describeSendTime, leadTimezone, nextSendWindow } from '@/lib/outreach/schedule'
+import { estimateUpNext } from '@/lib/outreach/engine'
+import { describeSendTime, followUpEta, leadTimezone, nextSendWindow } from '@/lib/outreach/schedule'
 import { mailConfigured } from '@/lib/outreach/mailer'
 import { createClient } from '@/lib/supabase/server'
 import type { Call, OutreachMessage, OutreachThread } from '@/lib/supabase/types'
@@ -24,7 +25,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
   const { data: lead } = await supabase.from('leads').select('*').eq('id', id).eq('org_id', orgId).maybeSingle()
   if (!lead) notFound()
 
-  const [{ data: activities }, { data: thread }, { data: calls }, { data: settings }] = await Promise.all([
+  const [{ data: activities }, { data: thread }, { data: calls }, { data: settings }, etas] = await Promise.all([
     supabase
       .from('lead_activities')
       .select('id, type, title, body, created_at, actor:profiles(full_name, email)')
@@ -44,6 +45,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       .order('started_at', { ascending: false })
       .limit(5),
     supabase.from('outreach_settings').select('autopilot').eq('org_id', orgId).maybeSingle(),
+    estimateUpNext(supabase, orgId),
   ])
 
   const flaggedReason = lead.email ? ineligibleReason(lead) : null
@@ -54,6 +56,11 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       : null
 
   const outreach = thread as unknown as (OutreachThread & { messages: OutreachMessage[] }) | null
+  const sendEta = etas[lead.id] ?? null
+  const followUpAt =
+    outreach?.status === 'active' && outreach.next_followup_at
+      ? followUpEta(zone, new Date(outreach.next_followup_at)).toISOString()
+      : null
 
   return (
     <LeadHub
@@ -61,6 +68,8 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       brief={currentBrief(lead.ai_brief)}
       flagged={flaggedReason}
       autopilotFrom={autopilotFrom}
+      sendEta={sendEta}
+      followUpAt={followUpAt}
       thread={
         outreach
           ? { ...outreach, messages: [...outreach.messages].sort((a, b) => a.sent_at.localeCompare(b.sent_at)) }

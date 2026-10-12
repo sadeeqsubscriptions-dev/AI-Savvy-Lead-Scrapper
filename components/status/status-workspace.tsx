@@ -10,6 +10,7 @@ import { formatRelative } from '@/lib/format'
 import type { LeadStatus, OutreachStatus } from '@/lib/supabase/types'
 import { cn } from '@/lib/utils'
 import { ActivityLog, type ActivityItem } from '@/components/leads/activity-log'
+import { Countdown } from '@/components/outreach/countdown'
 import { outreachStatusLabel, outreachStatusTone } from '@/components/outreach/outreach-drawer'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge, leadStatusColor } from '@/components/ui/badge'
@@ -180,7 +181,11 @@ export function StatusWorkspace({ rows, canWrite }: { rows: StatusRow[]; canWrit
                         )}
                       </td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">
-                        {row.next_followup_at ? `Follow-up ${formatRelative(row.next_followup_at)}` : '—'}
+                        {row.next_followup_at ? (
+                          <Countdown to={row.next_followup_at} label={`Follow-up ${row.emails_sent} in`} />
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1.5">

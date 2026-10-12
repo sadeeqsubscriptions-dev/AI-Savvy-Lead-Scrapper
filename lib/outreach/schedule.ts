@@ -158,3 +158,62 @@ export function startOfEasternDay(now = new Date()) {
   start.setUTCSeconds(0, 0)
   return start
 }
+
+/** The scheduler runs at :00, :15, :30 and :45. First run at or after `date`. */
+export function nextRunSlot(date: Date) {
+  const step = 15 * 60 * 1000
+  return new Date(Math.ceil(date.getTime() / step) * step)
+}
+
+/** When a follow-up due at `dueAt` actually goes out: next run inside the lead's hours. */
+export function followUpEta(timeZone: string, dueAt: Date, now = new Date()) {
+  const from = dueAt.getTime() > now.getTime() ? dueAt : now
+  return nextRunSlot(nextSendWindow(timeZone, nextRunSlot(from)))
+}
+
+/**
+ * Replays the scheduler to estimate when each lead's first email goes out:
+ * a run every 15 minutes, `perRun` emails per run, in the given order, only
+ * inside each lead's business hours, at most `dailyNew` per US Eastern day.
+ */
+export function estimateFirstSends(
+  items: { id: string; timeZone: string }[],
+  { perRun, dailyNew, sentToday, now = new Date() }: { perRun: number; dailyNew: number; sentToday: number; now?: Date },
+) {
+  const etas = new Map<string, Date>()
+  const pending = [...items]
+  const step = 15 * 60 * 1000
+  let slot = nextRunSlot(new Date(now.getTime() + 1000))
+  let day = startOfEasternDay(slot).getTime()
+  let sentThisDay = sentToday
+
+  for (let i = 0; i < 4 * 24 * 21 && pending.length > 0; i++, slot = new Date(slot.getTime() + step)) {
+    const slotDay = startOfEasternDay(slot).getTime()
+    if (slotDay !== day) {
+      day = slotDay
+      sentThisDay = 0
+    }
+    const budget = Math.min(perRun, dailyNew - sentThisDay)
+    if (budget <= 0) continue
+
+    // Check each time zone once per run, not once per lead.
+    const open = new Map<string, boolean>()
+    const isOpen = (zone: string) => {
+      if (!open.has(zone)) open.set(zone, inSendWindow(zone, slot))
+      return open.get(zone)!
+    }
+
+    let sent = 0
+    for (let j = 0; j < pending.length && sent < budget; ) {
+      if (isOpen(pending[j].timeZone)) {
+        etas.set(pending[j].id, slot)
+        pending.splice(j, 1)
+        sent++
+      } else {
+        j++
+      }
+    }
+    sentThisDay += sent
+  }
+  return etas
+}

@@ -7,7 +7,14 @@ import { composeEmail, signature, type DraftEmail, type PriorEmail } from './com
 import { FOLLOW_UP_DELAYS_DAYS, TOTAL_STEPS, senderConfig } from './config'
 import { ineligibleReason, isDemoLead } from './eligibility'
 import { outreachQueue, withQueue, type OutreachQueue } from './queue-shape'
-import { describeSendTime, inSendWindow, leadTimezone, nextSendWindow, startOfEasternDay } from './schedule'
+import {
+  describeSendTime,
+  estimateFirstSends,
+  inSendWindow,
+  leadTimezone,
+  nextSendWindow,
+  startOfEasternDay,
+} from './schedule'
 import {
   mailConfigured,
   messageIdsIn,
@@ -805,4 +812,30 @@ export async function recordAutopilotRun(supabase: Client, result: CycleResult) 
     })),
     { onConflict: 'org_id' },
   )
+}
+
+/**
+ * Estimated send time for every lead waiting for its first email, in the
+ * order the scheduler takes them (queued by hand first, then autopilot picks).
+ */
+export async function estimateUpNext(supabase: Client, orgId: string) {
+  const [{ data: queued }, autopilot, firstsToday] = await Promise.all([
+    supabase.from('leads').select('*').eq('org_id', orgId).not('metadata->outreach_queue', 'is', null).limit(200),
+    autopilotCandidates(supabase, orgId),
+    sentToday(supabase, true),
+  ])
+
+  const manual = (queued ?? [])
+    .map((lead) => ({ lead, queue: outreachQueue(lead.metadata) }))
+    .filter((item): item is { lead: Lead; queue: OutreachQueue } => item.queue !== null)
+    .sort((a, b) => a.queue.queued_at.localeCompare(b.queue.queued_at))
+    .map((item) => item.lead)
+
+  const order = [...manual, ...autopilot].map((lead) => ({ id: lead.id, timeZone: leadTimezone(lead) }))
+  const etas = estimateFirstSends(order, {
+    perRun: FIRSTS_PER_RUN,
+    dailyNew: senderConfig().dailyNew,
+    sentToday: firstsToday,
+  })
+  return Object.fromEntries([...etas].map(([id, at]) => [id, at.toISOString()])) as Record<string, string>
 }

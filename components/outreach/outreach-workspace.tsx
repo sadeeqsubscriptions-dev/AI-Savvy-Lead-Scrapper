@@ -35,6 +35,8 @@ import { Card, EmptyState, SectionHeading } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/progress'
 import { toast } from '@/components/ui/toaster'
 import { LeadEmailDrawer } from './lead-email-drawer'
+import { leadTimezone } from '@/lib/outreach/schedule'
+import { Countdown } from './countdown'
 import { OutreachDrawer, outreachStatusLabel, outreachStatusTone } from './outreach-drawer'
 
 type Tab = 'scheduled' | 'ready' | 'active' | 'replied' | 'done' | 'skipped'
@@ -54,6 +56,8 @@ export function OutreachWorkspace({
   mail,
   totalSteps,
   autopilot,
+  etas,
+  followUpEtas,
 }: {
   leads: OutreachLead[]
   threads: OutreachThreadWithMessages[]
@@ -61,6 +65,10 @@ export function OutreachWorkspace({
   mail: { configured: boolean; sender: string; sentToday: number; dailyLimit: number; webmailUrl: string }
   totalSteps: number
   autopilot: AutopilotState
+  /** Estimated first-email send time per lead id (ISO). */
+  etas: Record<string, string>
+  /** Estimated next follow-up send time per thread id (ISO). */
+  followUpEtas: Record<string, string>
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('scheduled')
@@ -359,6 +367,9 @@ export function OutreachWorkspace({
                     <span className="hidden truncate font-mono text-xs text-muted-foreground sm:block sm:w-56">
                       {lead.email}
                     </span>
+                    {tab === 'scheduled' && etas[lead.id] ? (
+                      <Countdown to={etas[lead.id]} timeZone={leadTimezone(lead)} className="shrink-0" />
+                    ) : null}
                     <ScoreBadge score={lead.score} />
                     <ChevronRight className="hidden size-4 text-muted-foreground sm:block" />
                   </button>
@@ -408,12 +419,18 @@ export function OutreachWorkspace({
                         </p>
                       </div>
                     </div>
-                    <span className="text-xs text-muted-foreground sm:w-40">
-                      {thread.status === 'replied'
-                        ? `Replied ${formatRelative(thread.replied_at)}`
-                        : thread.status === 'active' && thread.next_followup_at
-                          ? `Next follow-up ${formatRelative(thread.next_followup_at)}`
-                          : `Last sent ${formatRelative(thread.last_sent_at)}`}
+                    <span className="text-xs text-muted-foreground sm:w-48">
+                      {thread.status === 'replied' ? (
+                        `Replied ${formatRelative(thread.replied_at)}`
+                      ) : thread.status === 'active' && followUpEtas[thread.id] ? (
+                        <Countdown
+                          to={followUpEtas[thread.id]}
+                          label={`Follow-up ${thread.emails_sent} in`}
+                          timeZone={lead ? leadTimezone(lead) : undefined}
+                        />
+                      ) : (
+                        `Last sent ${formatRelative(thread.last_sent_at)}`
+                      )}
                     </span>
                     <span className="font-mono text-[11px] text-muted-foreground sm:w-20">
                       {thread.emails_sent} of {totalSteps} sent

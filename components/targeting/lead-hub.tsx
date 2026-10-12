@@ -38,6 +38,7 @@ import { Card } from '@/components/ui/card'
 import { Select } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/progress'
 import { toast } from '@/components/ui/toaster'
+import { Countdown } from '@/components/outreach/countdown'
 import { BriefScript } from './brief-script'
 
 function Section({
@@ -74,6 +75,8 @@ export function LeadHub({
   brief: initialBrief,
   flagged,
   autopilotFrom,
+  sendEta,
+  followUpAt,
   thread,
   calls,
   activities,
@@ -85,6 +88,10 @@ export function LeadHub({
   flagged: string | null
   /** When the autopilot will email this lead on its own, if it will. */
   autopilotFrom: string | null
+  /** Estimated first-email send time (ISO), if it's waiting to go out. */
+  sendEta: string | null
+  /** Estimated next follow-up send time (ISO). */
+  followUpAt: string | null
   thread: (OutreachThread & { messages: OutreachMessage[] }) | null
   calls: Call[]
   activities: ActivityItem[]
@@ -296,10 +303,10 @@ export function LeadHub({
                     </div>
                   )
                 })}
+                {thread.status === 'active' && followUpAt ? (
+                  <Countdown to={followUpAt} label={`Follow-up ${thread.emails_sent} in`} timeZone={zone} />
+                ) : null}
                 <p className="text-xs text-muted-foreground">
-                  {thread.status === 'active' && thread.next_followup_at
-                    ? `Next follow-up ${formatRelative(thread.next_followup_at)}. `
-                    : ''}
                   Reply or stop follow-ups from{' '}
                   <Link href="/outreach" className="text-primary hover:underline">
                     Outreach
@@ -313,8 +320,9 @@ export function LeadHub({
                   <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/[0.06] p-4">
                     <CalendarClock className="mt-0.5 size-4 shrink-0 text-primary" />
                     <div className="min-w-0 flex-1 text-sm">
-                      <p className="font-medium">
+                      <p className="flex flex-wrap items-center gap-2 font-medium">
                         Scheduled · goes out {describeSendTime(nextSendWindow(zone), zone)}
+                        {sendEta ? <Countdown to={sendEta} timeZone={zone} /> : null}
                       </p>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
                         {queue.draft
@@ -342,9 +350,16 @@ export function LeadHub({
                   {autopilotFrom ? (
                     <p className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/[0.06] p-3 text-xs leading-5">
                       <CalendarClock className="mt-0.5 size-3.5 shrink-0 text-success" />
-                      <span>
-                        On autopilot: Claude researches and emails this lead automatically from {autopilotFrom}{' '}
-                        (their time, weekdays 9-4). Use the composer below only to send your own version sooner.
+                      <span className="space-y-1.5">
+                        <span className="block">
+                          On autopilot: Claude researches and emails this lead automatically (their time, weekdays 9-4).
+                          Use the composer below only to send your own version sooner.
+                        </span>
+                        {sendEta ? (
+                          <Countdown to={sendEta} timeZone={zone} />
+                        ) : (
+                          <span className="block text-muted-foreground">From {autopilotFrom}</span>
+                        )}
                       </span>
                     </p>
                   ) : null}

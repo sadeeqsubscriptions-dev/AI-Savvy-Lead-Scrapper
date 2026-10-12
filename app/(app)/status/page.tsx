@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { canWrite, requireSession } from '@/lib/auth'
+import { followUpEta, leadTimezone } from '@/lib/outreach/schedule'
 import { createClient } from '@/lib/supabase/server'
 import type { ActivityItem } from '@/components/leads/activity-log'
 import { StatusWorkspace, type StatusRow } from '@/components/status/status-workspace'
@@ -44,7 +45,7 @@ export default async function StatusPage() {
       Promise.all([
         supabase
           .from('leads')
-          .select('id, full_name, company, email, phone, status, last_contacted_at')
+          .select('id, full_name, company, email, phone, status, last_contacted_at, location, city, country')
           .in('id', batch)
           .eq('org_id', orgId),
         supabase
@@ -79,7 +80,10 @@ export default async function StatusPage() {
       email_status: thread?.status ?? null,
       emails_sent: thread?.emails_sent ?? 0,
       replied_at: thread?.replied_at ?? null,
-      next_followup_at: thread?.status === 'active' ? (thread.next_followup_at ?? null) : null,
+      next_followup_at:
+        thread?.status === 'active' && thread.next_followup_at
+          ? followUpEta(leadTimezone(lead), new Date(thread.next_followup_at)).toISOString()
+          : null,
       calls: callsByLead.get(lead.id) ?? 0,
       activities: activityByLead.get(lead.id) ?? [],
     }
