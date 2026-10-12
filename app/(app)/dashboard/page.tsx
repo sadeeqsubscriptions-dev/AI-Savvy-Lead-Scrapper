@@ -20,7 +20,7 @@ import { Card, CardHeader, EmptyState } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { requireSession } from '@/lib/auth'
 import { senderConfig } from '@/lib/outreach/config'
-import { sentToday } from '@/lib/outreach/engine'
+import { autopilotCandidates, sentToday } from '@/lib/outreach/engine'
 import { createClient } from '@/lib/supabase/server'
 import { LEAD_STATUSES } from '@/lib/constants'
 import { formatCurrency, formatDelta, formatNumber, formatPercent, formatRelative, formatTime, greetingFor } from '@/lib/format'
@@ -42,7 +42,7 @@ export default async function DashboardPage() {
   const supabase = await createClient()
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  const [metrics, trend, activity, team, meetings, statusCounts, replyRows, scheduledRows, newToday] = await Promise.all([
+  const [metrics, trend, activity, team, meetings, statusCounts, replyRows, scheduledRows, newToday, upNext] = await Promise.all([
     getDashboardMetrics(orgId),
     getLeadTrend(orgId, 30),
     getRecentActivity(orgId, 6),
@@ -63,6 +63,7 @@ export default async function DashboardPage() {
       .eq('org_id', orgId)
       .not('metadata->outreach_queue', 'is', null),
     sentToday(supabase, true),
+    autopilotCandidates(supabase, orgId),
   ])
 
   type ReplyRow = {
@@ -152,7 +153,7 @@ export default async function DashboardPage() {
 
       <RepliesCard
         replies={replies}
-        scheduled={scheduledRows.count ?? 0}
+        scheduled={(scheduledRows.count ?? 0) + upNext.length}
         sentToday={newToday}
         dailyTarget={senderConfig().dailyNew}
       />

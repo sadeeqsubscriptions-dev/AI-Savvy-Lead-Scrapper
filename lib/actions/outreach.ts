@@ -2,15 +2,15 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import { canWrite, requireSession } from '@/lib/auth'
+import { canWrite, isAdmin, requireSession } from '@/lib/auth'
 import {
   canSendNow,
   cancelQueued,
   previewOutreach,
   queueOutreach,
   replyToThread,
-  runOutreachCycle,
   startOutreach,
+  syncReplies,
 } from '@/lib/outreach/engine'
 import { mailConfigured, testMailConnection } from '@/lib/outreach/mailer'
 import { createClient } from '@/lib/supabase/server'
@@ -121,14 +121,44 @@ export async function cancelScheduledOutreach(leadId: string): Promise<SendResul
 }
 
 /** Checks the inbox for replies, then sends any follow-ups that are due. */
+/**
+ * Reads the inbox for replies now. Sending (new leads and follow-ups) is the
+ * scheduler's job, so opening the page never waits on emails going out.
+ */
 export async function syncOutreach() {
   const session = await requireSession()
-  if (!canWrite(session.role)) return { replies: 0, bounces: 0, followUps: 0, firsts: 0, errors: [] }
+  if (!canWrite(session.role)) return { replies: 0, bounces: 0, errors: [] as string[] }
+  if (!mailConfigured()) return { replies: 0, bounces: 0, errors: ['Email is not connected.'] }
 
   const supabase = await createClient()
-  const result = await runOutreachCycle(supabase, session.organization.id)
+  try {
+    const result = await syncReplies(supabase, session.organization.id)
+    refresh()
+    return { ...result, errors: [] as string[] }
+  } catch (error) {
+    return { replies: 0, bounces: 0, errors: [error instanceof Error ? error.message : 'Inbox check failed.'] }
+  }
+}
+
+/** Turns the autopilot (automatic first emails) on or off for the workspace. */
+export async function setAutopilot(enabled: boolean): Promise<SendResult> {
+  const session = await requireSession()
+  if (!isAdmin(session.role)) return { ok: false, error: 'Only owners and admins can change the autopilot.' }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('outreach_settings')
+    .upsert({ org_id: session.organization.id, autopilot: enabled, updated_at: new Date().toISOString() }, { onConflict: 'org_id' })
+  if (error) {
+    return {
+      ok: false,
+      error: error.message.includes('outreach_settings')
+        ? 'Run the outreach_settings database update first (see setup steps).'
+        : error.message,
+    }
+  }
   refresh()
-  return result
+  return { ok: true }
 }
 
 export async function stopOutreach(threadId: string): Promise<SendResult> {

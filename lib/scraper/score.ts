@@ -51,7 +51,8 @@ export function normalizeLead(lead: ScrapedLeadInput) {
     full_name: trim(lead.full_name),
     company: trim(lead.company),
     title: trim(lead.title),
-    email: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null,
+    // Rejects obfuscated addresses like "li*****@****.org" as well as junk.
+    email: email && /^[a-z0-9._%+'-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(email) ? email : null,
     phone: trim(lead.phone),
     website: trim(lead.website),
     address: trim(lead.address),

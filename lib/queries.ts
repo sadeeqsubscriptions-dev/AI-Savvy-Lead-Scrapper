@@ -1,4 +1,5 @@
 import { currentBrief } from '@/lib/ai/brief-shape'
+import { isDemoLead } from '@/lib/outreach/eligibility'
 import { outreachQueue } from '@/lib/outreach/queue-shape'
 import { describeSendTime, leadTimezone, nextSendWindow } from '@/lib/outreach/schedule'
 import { createClient } from '@/lib/supabase/server'
@@ -344,6 +345,10 @@ export type OutreachLead = Pick<
   researched: boolean
   /** Waiting in the send queue: when it goes out (lead's local time). */
   scheduled: { label: string; hasDraft: boolean; error: string | null } | null
+  /** Sample data: the autopilot never emails it. */
+  demo: boolean
+  /** Next business-hours window in the lead's time zone. */
+  nextSend: string
 }
 export type OutreachThreadWithMessages = OutreachThread & { messages: OutreachMessage[] }
 
@@ -375,16 +380,19 @@ export async function getOutreachBoard(orgId: string) {
   }))
 
   // Only whether a script exists goes to the browser, not the script itself.
-  const board = ((leads as (Omit<OutreachLead, 'researched' | 'scheduled'> & Pick<Lead, 'ai_brief'>)[] | null) ?? []).map(
+  const board = ((leads as (Omit<OutreachLead, 'researched' | 'scheduled' | 'demo' | 'nextSend'> & Pick<Lead, 'ai_brief'>)[] | null) ?? []).map(
     ({ ai_brief, ...lead }) => {
       const queue = outreachQueue(lead.metadata)
       const zone = leadTimezone(lead)
+      const nextSend = describeSendTime(nextSendWindow(zone), zone)
       return {
         ...lead,
         researched: currentBrief(ai_brief) !== null,
+        demo: isDemoLead(lead.metadata),
+        nextSend,
         scheduled: queue
           ? {
-              label: describeSendTime(nextSendWindow(zone), zone),
+              label: nextSend,
               hasDraft: Boolean(queue.draft),
               error: queue.last_error ?? null,
             }

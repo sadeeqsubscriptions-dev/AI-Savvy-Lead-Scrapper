@@ -2,7 +2,8 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { currentBrief } from '@/lib/ai/brief-shape'
 import { canWrite, requireSession } from '@/lib/auth'
-import { ineligibleReason } from '@/lib/outreach/eligibility'
+import { ineligibleReason, isDemoLead } from '@/lib/outreach/eligibility'
+import { describeSendTime, leadTimezone, nextSendWindow } from '@/lib/outreach/schedule'
 import { mailConfigured } from '@/lib/outreach/mailer'
 import { createClient } from '@/lib/supabase/server'
 import type { Call, OutreachMessage, OutreachThread } from '@/lib/supabase/types'
@@ -23,7 +24,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
   const { data: lead } = await supabase.from('leads').select('*').eq('id', id).eq('org_id', orgId).maybeSingle()
   if (!lead) notFound()
 
-  const [{ data: activities }, { data: thread }, { data: calls }] = await Promise.all([
+  const [{ data: activities }, { data: thread }, { data: calls }, { data: settings }] = await Promise.all([
     supabase
       .from('lead_activities')
       .select('id, type, title, body, created_at, actor:profiles(full_name, email)')
@@ -42,7 +43,15 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       .eq('lead_id', lead.id)
       .order('started_at', { ascending: false })
       .limit(5),
+    supabase.from('outreach_settings').select('autopilot').eq('org_id', orgId).maybeSingle(),
   ])
+
+  const flaggedReason = lead.email ? ineligibleReason(lead) : null
+  const zone = leadTimezone(lead)
+  const autopilotFrom =
+    (settings?.autopilot ?? true) && lead.email && !flaggedReason && !isDemoLead(lead.metadata) && !thread
+      ? describeSendTime(nextSendWindow(zone), zone)
+      : null
 
   const outreach = thread as unknown as (OutreachThread & { messages: OutreachMessage[] }) | null
 
@@ -50,7 +59,8 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
     <LeadHub
       lead={lead}
       brief={currentBrief(lead.ai_brief)}
-      flagged={lead.email ? ineligibleReason(lead) : null}
+      flagged={flaggedReason}
+      autopilotFrom={autopilotFrom}
       thread={
         outreach
           ? { ...outreach, messages: [...outreach.messages].sort((a, b) => a.sent_at.localeCompare(b.sent_at)) }

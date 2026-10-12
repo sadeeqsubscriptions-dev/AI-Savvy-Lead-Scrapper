@@ -40,7 +40,7 @@ export function RepliesCard({
             </p>
             <p className="flex items-center gap-2">
               <CalendarClock className="size-3.5" />
-              {scheduled} scheduled
+              {scheduled} up next on autopilot
             </p>
             <Link href="/outreach" className="inline-block text-primary hover:underline">
               Open Outreach →

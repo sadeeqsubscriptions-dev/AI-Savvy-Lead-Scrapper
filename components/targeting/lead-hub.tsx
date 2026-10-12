@@ -73,6 +73,7 @@ export function LeadHub({
   lead,
   brief: initialBrief,
   flagged,
+  autopilotFrom,
   thread,
   calls,
   activities,
@@ -82,6 +83,8 @@ export function LeadHub({
   lead: Lead
   brief: LeadAiBrief | null
   flagged: string | null
+  /** When the autopilot will email this lead on its own, if it will. */
+  autopilotFrom: string | null
   thread: (OutreachThread & { messages: OutreachMessage[] }) | null
   calls: Call[]
   activities: ActivityItem[]
@@ -335,7 +338,18 @@ export function LeadHub({
                   ) : null}
                 </div>
               ) : (
-                <EmailComposer lead={lead} flagged={flagged} canWrite={canWrite} mailReady={mailReady} />
+                <div className="space-y-3">
+                  {autopilotFrom ? (
+                    <p className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/[0.06] p-3 text-xs leading-5">
+                      <CalendarClock className="mt-0.5 size-3.5 shrink-0 text-success" />
+                      <span>
+                        On autopilot: Claude researches and emails this lead automatically from {autopilotFrom}{' '}
+                        (their time, weekdays 9-4). Use the composer below only to send your own version sooner.
+                      </span>
+                    </p>
+                  ) : null}
+                  <EmailComposer lead={lead} flagged={flagged} canWrite={canWrite} mailReady={mailReady} />
+                </div>
               )
             )}
           </Section>

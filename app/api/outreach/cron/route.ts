@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse, after, type NextRequest } from 'next/server'
-import { runOutreachCycle } from '@/lib/outreach/engine'
+import { recordAutopilotRun, runOutreachCycle } from '@/lib/outreach/engine'
 import { createAdminClient, hasAdminCredentials } from '@/lib/supabase/admin'
 
 // IMAP + SMTP need raw TCP sockets, and each follow-up waits on Claude.
@@ -34,8 +34,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'SUPABASE_SERVICE_ROLE_KEY is not set' }, { status: 500 })
   }
 
+  // Leave headroom under maxDuration (300s) for the send in flight to finish.
+  const deadline = Date.now() + 200_000
   after(async () => {
-    const result = await runOutreachCycle(createAdminClient())
+    const admin = createAdminClient()
+    const result = await runOutreachCycle(admin, undefined, deadline)
+    await recordAutopilotRun(admin, result)
     console.log('[outreach-cron]', JSON.stringify(result))
   })
   return NextResponse.json({ started: true }, { status: 202 })

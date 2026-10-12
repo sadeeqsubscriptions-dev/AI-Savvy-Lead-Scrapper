@@ -251,6 +251,14 @@ export type CallEvent = {
   created_at: string
 }
 
+export type OutreachSettings = {
+  org_id: string
+  autopilot: boolean
+  last_run_at: string | null
+  last_run: Json
+  updated_at: string
+}
+
 export type Notification = {
   id: string
   org_id: string
@@ -402,6 +410,11 @@ export type Database = {
         CallEvent,
         Defaulted<CallEvent, 'id' | 'speaker' | 'payload' | 'created_at'>,
         Partial<CallEvent>
+      >
+      outreach_settings: Table<
+        OutreachSettings,
+        Defaulted<OutreachSettings, 'autopilot' | 'last_run_at' | 'last_run' | 'updated_at'>,
+        Partial<OutreachSettings>
       >
       notifications: Table<
         Notification,

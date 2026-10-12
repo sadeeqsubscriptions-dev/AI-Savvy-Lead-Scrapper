@@ -54,12 +54,19 @@ export function publicSectorReason(lead: {
 }
 
 const DEAD_INBOXES =
-  /^(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|abuse|privacy|legal|compliance|appeals|complaints|grievances?|careers|jobs|hr|recruiting|press|media|webmaster|security|dpo|gdpr|unsubscribe)([._-]|$)/
+  /^(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|abuse|privacy|legal|compliance|appeals|complaints|grievances?|careers|jobs|hr|recruiting|press|media|webmaster|security|dpo|gdpr|unsubscribe|dmca|dmcanotice|copyright|notices?|billing|invoices?|accounting|payroll|returns)([._-]|$)/
 
 const PLACEHOLDER_DOMAINS = /^(example\.(com|org|net)|domain\.com|email\.com|yourdomain\.com|sentry\.io|wixpress\.com|sentry-next\.wixpress\.com)$/
 
 // Search-result and article titles scraped in place of a business name.
 const TITLE_LIKE = /(how to|phone number|near me|\bbest\b.*\bin\b|\btop \d+|\bguide\b|wikipedia|\||…|\.\.\.|\?|^\d+\s)/i
+
+// Bare category words or page headings scraped instead of a business name.
+const GENERIC_NAME =
+  /^(agents?|realtors?|home|homepage|contact( us)?|about( us)?|our team|services|reading your emails|transportation|real estate( in [a-z ]+)?|[a-z ]+ in (florida|miami|[a-z]+, [a-z]{2}))$/i
+
+// Scrapers sometimes capture an obfuscated address ("li*****@****.org").
+const VALID_EMAIL = /^[a-z0-9._%+'-]+@[a-z0-9.-]+\.[a-z]{2,}$/
 
 export type EligibilityLead = {
   full_name: string
@@ -74,6 +81,7 @@ export type EligibilityLead = {
 export function ineligibleReason(lead: EligibilityLead): string | null {
   const email = (lead.email ?? '').trim().toLowerCase()
   if (!email.includes('@')) return 'No email address.'
+  if (!VALID_EMAIL.test(email)) return 'The address is masked or malformed, so it cannot be delivered.'
 
   const [local, domain] = email.split('@')
   const publicSector = publicSectorReason(lead)
@@ -82,7 +90,7 @@ export function ineligibleReason(lead: EligibilityLead): string | null {
   if (DEAD_INBOXES.test(local)) return `'${local}@' is a department inbox nobody reads for sales email.`
 
   const name = lead.company || lead.full_name
-  if (name.length > 70 || TITLE_LIKE.test(name)) {
+  if (name.length > 70 || TITLE_LIKE.test(name) || GENERIC_NAME.test(name.trim())) {
     return 'Name looks like a web page title, not a business.'
   }
   if (!lead.company && !lead.website && !lead.industry) {
@@ -99,4 +107,11 @@ export function skipNote(metadata: Json): string | null {
   if (!note || typeof note !== 'object' || Array.isArray(note)) return null
   const reason = (note as Record<string, Json | undefined>).reason
   return typeof reason === 'string' ? `Claude: ${reason}` : null
+}
+
+/** Sample leads from the demo dataset: never emailed by the autopilot. */
+export function isDemoLead(metadata: Json): boolean {
+  return Boolean(
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata) && (metadata as Record<string, Json | undefined>).demo,
+  )
 }
