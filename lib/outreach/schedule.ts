@@ -217,3 +217,38 @@ export function estimateFirstSends(
   }
   return etas
 }
+
+/** Offset of `timeZone` from UTC at `date`, in minutes (EDT = -240). */
+function zoneOffsetMinutes(timeZone: string, date: Date) {
+  const local = localParts(date, timeZone)
+  const asUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute)
+  return Math.round((asUtc - Math.floor(date.getTime() / 60000) * 60000) / 60000)
+}
+
+/** "2026-10-14T15:00" typed as the lead's wall-clock time → ISO instant. */
+export function zonedInputToIso(value: string, timeZone: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/)
+  if (!match) return null
+  const [, y, mo, d, h, mi] = match.map(Number)
+  const guess = new Date(Date.UTC(y, mo - 1, d, h, mi))
+  // Two passes settle the offset across a daylight-saving change.
+  let instant = new Date(guess.getTime() - zoneOffsetMinutes(timeZone, guess) * 60000)
+  instant = new Date(guess.getTime() - zoneOffsetMinutes(timeZone, instant) * 60000)
+  return instant.toISOString()
+}
+
+/** ISO instant → "2026-10-14T15:00" in the lead's wall-clock time (for <input type="datetime-local">). */
+export function isoToZonedInput(iso: string, timeZone: string) {
+  const local = localParts(new Date(iso), timeZone)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${local.year}-${pad(local.month)}-${pad(local.day)}T${pad(local.hour)}:${pad(local.minute)}`
+}
+
+/** Short zone label for the lead, e.g. "EDT". */
+export function zoneAbbreviation(timeZone: string, date = new Date()) {
+  return (
+    new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' })
+      .formatToParts(date)
+      .find((part) => part.type === 'timeZoneName')?.value ?? timeZone
+  )
+}

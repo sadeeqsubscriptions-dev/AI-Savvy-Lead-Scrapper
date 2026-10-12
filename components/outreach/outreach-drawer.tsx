@@ -133,7 +133,7 @@ export function OutreachDrawer({
             Open mailbox
           </a>
           {lead?.phone ? (
-            <Link href={`/dialer?lead=${lead.id}`} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+            <Link href={`/dialer/${lead.id}`} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
               <PhoneCall className="size-3.5" />
               Call them
             </Link>

@@ -139,6 +139,8 @@ export async function sendMail(message: {
   messageId: string
   inReplyTo?: string | null
   references?: string[]
+  /** A calendar invite (.ics text) the lead can accept straight from the email. */
+  invite?: string
 }) {
   const env = mailEnv()
   const transport = createTransport()
@@ -155,6 +157,7 @@ export async function sendMail(message: {
       // Gives Gmail/Yahoo a one-click unsubscribe target; replies land in the
       // inbox, where the sync stops the sequence.
       list: { unsubscribe: { url: `mailto:${env.user}?subject=unsubscribe`, comment: 'Unsubscribe' } },
+      ...(message.invite ? { icalEvent: { method: 'REQUEST', filename: 'invite.ics', content: message.invite } } : {}),
     })
   } catch (error) {
     throw new Error(explain('SMTP', error))
@@ -266,4 +269,45 @@ export function stripQuotedReply(text: string) {
 
   const result = kept.join('\n').trim()
   return result.length > 0 ? result : text.trim()
+}
+
+function icsDate(date: Date) {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+}
+
+/** Escapes text for an .ics field: backslash, semicolon, comma, newline. */
+function icsText(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
+}
+
+/** A standard calendar invite (works in Gmail, Outlook, Apple Calendar). */
+export function calendarInvite(event: {
+  uid: string
+  start: Date
+  minutes: number
+  title: string
+  description: string
+  attendee: { name: string; email: string }
+  location?: string | null
+}) {
+  const organizer = senderAddress()
+  return [
+    'BEGIN:VCALENDAR',
+    'PRODID:-//AI Savvy//Lead CRM//EN',
+    'VERSION:2.0',
+    'METHOD:REQUEST',
+    'BEGIN:VEVENT',
+    `UID:${event.uid}`,
+    `DTSTAMP:${icsDate(new Date())}`,
+    `DTSTART:${icsDate(event.start)}`,
+    `DTEND:${icsDate(new Date(event.start.getTime() + event.minutes * 60_000))}`,
+    `SUMMARY:${icsText(event.title)}`,
+    `DESCRIPTION:${icsText(event.description)}`,
+    ...(event.location ? [`LOCATION:${icsText(event.location)}`] : []),
+    `ORGANIZER:mailto:${organizer}`,
+    `ATTENDEE;CN=${icsText(event.attendee.name)};RSVP=TRUE:mailto:${event.attendee.email}`,
+    'STATUS:CONFIRMED',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n')
 }

@@ -191,7 +191,7 @@ export function StatusWorkspace({ rows, canWrite }: { rows: StatusRow[]; canWrit
                         <div className="flex justify-end gap-1.5">
                           {row.phone ? (
                             <Link
-                              href={`/dialer?lead=${row.id}`}
+                              href={`/dialer/${row.id}`}
                               className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
                               aria-label={`Call ${row.full_name}`}
                               title="Call"

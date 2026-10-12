@@ -186,7 +186,7 @@ export function LeadHub({
             ))}
           </Select>
           {lead.phone ? (
-            <Link href={`/dialer?lead=${lead.id}`} className={buttonVariants({ variant: 'outline' })}>
+            <Link href={`/dialer/${lead.id}`} className={buttonVariants({ variant: 'outline' })}>
               <PhoneCall className="size-4" />
               Call
             </Link>
