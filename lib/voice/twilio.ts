@@ -52,9 +52,15 @@ export function callerId() {
   return env().callerId
 }
 
-/** Public base URL Twilio calls back to. */
-export function publicBaseUrl() {
-  return (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')
+/**
+ * Public base URL Twilio calls back to. Uses NEXT_PUBLIC_SITE_URL when it is a
+ * real https address; otherwise (unset, or left at localhost) the address the
+ * request came in on, which on Vercel is the live site.
+ */
+export function publicBaseUrl(request?: Request) {
+  const configured = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')
+  if (/^https:\/\//.test(configured) && !/localhost|127\.0\.0\.1/.test(configured)) return configured
+  return request ? new URL(request.url).origin : configured
 }
 
 /**
@@ -68,7 +74,7 @@ export function isTwilioRequest(request: Request, params: Record<string, string>
   if (!signature || !authToken) return false
 
   const url = new URL(request.url)
-  const candidates = [request.url, `${publicBaseUrl()}${url.pathname}${url.search}`]
+  const candidates = [request.url, `${publicBaseUrl(request)}${url.pathname}${url.search}`]
   return candidates.some((candidate) => twilio.validateRequest(authToken, signature, candidate, params))
 }
 

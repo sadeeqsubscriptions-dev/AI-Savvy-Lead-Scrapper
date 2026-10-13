@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     .update({ status: 'in_progress', twilio_call_sid: params.CallSid ?? null })
     .eq('id', call.id)
 
-  const base = publicBaseUrl()
+  const base = publicBaseUrl(request)
   const response = new VoiceResponse()
 
   // Transcribe both sides. The rep's browser is the caller here, so the
