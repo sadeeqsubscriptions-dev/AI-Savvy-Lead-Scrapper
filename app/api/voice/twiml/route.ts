@@ -51,6 +51,10 @@ export async function POST(request: Request) {
     inboundTrackLabel: 'rep',
     outboundTrackLabel: 'lead',
     languageCode: 'en-US',
+    // Deepgram Nova-3 finalises sentences faster than the default engine,
+    // which is what the live coach waits on.
+    transcriptionEngine: 'deepgram',
+    speechModel: 'nova-3',
     partialResults: false,
   })
 

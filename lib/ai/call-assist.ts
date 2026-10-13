@@ -91,7 +91,7 @@ ${TIME_RULES(zone)}`,
     prompt: `${context(lead, brief)}
 
 Call transcript so far (latest last):
-${transcriptText(events.slice(-30))}
+${transcriptText(events.slice(-14))}
 
 What should the rep say next?`,
     schema: {
@@ -106,8 +106,10 @@ What should the rep say next?`,
       additionalProperties: false,
     },
     parse: (value) => suggestionSchema.safeParse(value),
+    // Read live, mid-sentence: the fast model, no thinking, short output.
+    fast: true,
     effort: 'low',
-    maxTokens: 1500,
+    maxTokens: 600,
   })
 }
 

@@ -7,6 +7,11 @@ import Anthropic from '@anthropic-ai/sdk'
  */
 
 export const CLAUDE_MODEL = 'claude-opus-5-5'
+/**
+ * For answers needed in a second or two (the live call coach): the fastest
+ * current model with thinking off. Everything else uses CLAUDE_MODEL.
+ */
+export const CLAUDE_FAST_MODEL = 'claude-haiku-5-5'
 
 type Effort = 'low' | 'medium' | 'high'
 
@@ -47,6 +52,7 @@ export async function askClaudeJson<T>({
   tools = [],
   effort = 'low',
   maxTokens = 4000,
+  fast = false,
 }: {
   system: string
   prompt: string
@@ -57,6 +63,8 @@ export async function askClaudeJson<T>({
   tools?: Anthropic.Beta.BetaToolUnion[]
   effort?: Effort
   maxTokens?: number
+  /** Live, latency-critical answers: CLAUDE_FAST_MODEL, no thinking. */
+  fast?: boolean
 }): Promise<ClaudeJsonResult<T>> {
   const key = apiKey()
   if (!key) return { ok: false, error: 'ANTHROPIC_API_KEY is not set in the environment.' }
@@ -68,12 +76,14 @@ export async function askClaudeJson<T>({
   try {
     for (let turn = 0; turn < 3; turn++) {
       response = await client.beta.messages.create({
-        model: CLAUDE_MODEL,
+        model: fast ? CLAUDE_FAST_MODEL : CLAUDE_MODEL,
         max_tokens: maxTokens,
         // If a safety classifier declines, the API retries on a fallback model
-        // inside the same call instead of failing.
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
+        // inside the same call instead of failing. (Haiku has no server-side
+        // fallback, so the fast path goes without.)
+        ...(fast
+          ? { thinking: { type: 'disabled' as const } }
+          : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }),
         tools,
         output_config: { effort, format: { type: 'json_schema', schema } },
         system,

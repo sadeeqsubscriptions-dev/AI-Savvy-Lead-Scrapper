@@ -1,14 +1,20 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
-import { AlertTriangle, ChevronRight, Phone, PhoneCall, Search } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { useMemo, useState, useTransition } from 'react'
+import { AlertTriangle, ChevronRight, Phone, PhoneCall, PhoneForwarded, Search } from 'lucide-react'
+import { leadForNumber } from '@/lib/actions/calls'
+import { toE164 } from '@/lib/phone'
 import { formatRelative } from '@/lib/format'
 import type { LeadStatus } from '@/lib/supabase/types'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge, ScoreBadge, leadStatusTone } from '@/components/ui/badge'
 import { Card, EmptyState, SectionHeading } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/field'
+import { Spinner } from '@/components/ui/progress'
+import { toast } from '@/components/ui/toaster'
 
 export type DialerListLead = {
   id: string
@@ -29,7 +35,25 @@ export function DialerList({
   leads: DialerListLead[]
   voice: { configured: boolean; missing: string[] }
 }) {
+  const router = useRouter()
   const [query, setQuery] = useState('')
+  const [dialNumber, setDialNumber] = useState('')
+  const [dialName, setDialName] = useState('')
+  const [opening, startOpening] = useTransition()
+
+  // Any number: reuse the lead if it already exists, otherwise add it, then open its call page.
+  const dial = (event: React.FormEvent) => {
+    event.preventDefault()
+    startOpening(async () => {
+      const result = await leadForNumber(dialNumber, dialName)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      if (result.created) toast.success('Added as a new lead.')
+      router.push(`/dialer/${result.leadId}`)
+    })
+  }
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()
     if (!term) return leads
@@ -61,6 +85,42 @@ export function DialerList({
           </div>
         </Card>
       ) : null}
+
+      <Card className="p-4">
+        <form onSubmit={dial} className="flex flex-col gap-3 md:flex-row md:items-end">
+          <div className="flex items-center gap-3 md:w-56">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-success/15 text-success">
+              <PhoneForwarded className="size-5" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold">Dial a number</p>
+              <p className="text-xs text-muted-foreground">Saved as a lead automatically</p>
+            </div>
+          </div>
+          <label className="flex-1 space-y-1">
+            <span className="text-xs text-muted-foreground">Phone number</span>
+            <Input
+              value={dialNumber}
+              onChange={(event) => setDialNumber(event.target.value)}
+              placeholder="+1 305 555 0100"
+              className="font-mono"
+              inputMode="tel"
+            />
+          </label>
+          <label className="flex-1 space-y-1">
+            <span className="text-xs text-muted-foreground">Name or business (optional)</span>
+            <Input value={dialName} onChange={(event) => setDialName(event.target.value)} placeholder="e.g. Sunrise Dental" />
+          </label>
+          <Button
+            type="submit"
+            disabled={opening || !toE164(dialNumber)}
+            className="bg-success text-white hover:brightness-110 md:w-40"
+          >
+            {opening ? <Spinner className="size-4" /> : <PhoneCall className="size-4" />}
+            Open &amp; call
+          </Button>
+        </form>
+      </Card>
 
       <Card>
         <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">

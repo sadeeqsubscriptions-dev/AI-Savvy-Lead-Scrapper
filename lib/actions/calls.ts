@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { currentBrief } from '@/lib/ai/brief-shape'
-import { suggestReply, summarizeCall, writeCallEmail, type CallSuggestion } from '@/lib/ai/call-assist'
+import { summarizeCall, writeCallEmail } from '@/lib/ai/call-assist'
 import { canWrite, requireSession } from '@/lib/auth'
 import { signature } from '@/lib/outreach/compose'
 import { senderConfig } from '@/lib/outreach/config'
@@ -10,7 +10,7 @@ import { replyToThread, startOutreach } from '@/lib/outreach/engine'
 import { calendarInvite, mailConfigured, newMessageId, sendMail } from '@/lib/outreach/mailer'
 import { withQueue } from '@/lib/outreach/queue-shape'
 import { leadTimezone } from '@/lib/outreach/schedule'
-import { toE164 } from '@/lib/phone'
+import { formatPhone, toE164 } from '@/lib/phone'
 import { createClient } from '@/lib/supabase/server'
 import type { Json } from '@/lib/supabase/types'
 import { missingVoiceSettings, voiceConfigured, voiceToken } from '@/lib/voice/twilio'
@@ -74,27 +74,6 @@ async function loadCall(callId: string) {
       .order('created_at'),
   ])
   return { session, supabase, call, lead, events: events ?? [] }
-}
-
-/** Claude's next line for the rep, based on everything said so far. */
-export async function assistCall(
-  callId: string,
-): Promise<{ ok: true; suggestion: CallSuggestion } | { ok: false; error: string }> {
-  const loaded = await loadCall(callId)
-  if (!loaded || !loaded.lead) return { ok: false, error: 'Call not found.' }
-  if (loaded.events.length === 0) return { ok: false, error: 'Nothing said yet.' }
-
-  const result = await suggestReply(loaded.lead, currentBrief(loaded.lead.ai_brief), loaded.events)
-  if (!result.ok) return result
-
-  await loaded.supabase.from('call_events').insert({
-    org_id: loaded.call.org_id,
-    call_id: loaded.call.id,
-    kind: 'suggestion',
-    text: result.data.say,
-    payload: result.data,
-  })
-  return { ok: true, suggestion: result.data }
 }
 
 /** Closes the call, writes Claude's notes, and logs it on the lead's timeline. */
@@ -442,4 +421,50 @@ export async function sendCallEmail(leadId: string, subject: string, body: strin
 
   refreshLead(lead.id)
   return { ok: true, message: `Email sent to ${lead.email}.` }
+}
+
+/**
+ * "Dial a number": finds the lead with this phone number, or adds one, and
+ * returns its id so the dialer can open its call page.
+ */
+export async function leadForNumber(rawNumber: string, name: string) {
+  const session = await requireSession()
+  if (!canWrite(session.role)) return { ok: false as const, error: 'Viewers cannot place calls.' }
+
+  const e164 = toE164(rawNumber)
+  if (!e164) return { ok: false as const, error: 'Enter the full number with area code, e.g. +1 305 555 0100.' }
+
+  const supabase = await createClient()
+  const orgId = session.organization.id
+  const digits = e164.replace(/\D/g, '')
+  const last10 = digits.slice(-10)
+
+  // Phones are stored as scraped ("(305) 555-0100"), so compare digits.
+  const { data: candidates } = await supabase
+    .from('leads')
+    .select('id, phone')
+    .eq('org_id', orgId)
+    .ilike('phone', `%${last10.slice(-4)}%`)
+    .limit(200)
+  const existing = (candidates ?? []).find((lead) => (lead.phone ?? '').replace(/\D/g, '').endsWith(last10))
+  if (existing) return { ok: true as const, leadId: existing.id, created: false }
+
+  const label = name.trim() || formatPhone(e164)
+  const { data: lead, error } = await supabase
+    .from('leads')
+    .insert({
+      org_id: orgId,
+      full_name: label.slice(0, 160),
+      phone: e164,
+      source: 'Manual',
+      created_by: session.userId,
+      owner_id: session.userId,
+    })
+    .select('id')
+    .single()
+  if (error || !lead) return { ok: false as const, error: error?.message ?? 'Could not add the lead.' }
+
+  revalidatePath('/dialer')
+  revalidatePath('/crm')
+  return { ok: true as const, leadId: lead.id, created: true }
 }

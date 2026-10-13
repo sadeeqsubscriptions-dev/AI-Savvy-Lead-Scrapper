@@ -22,8 +22,8 @@ import {
   Sparkles,
   ThumbsDown,
 } from 'lucide-react'
+import type { CallSuggestion } from '@/lib/ai/call-assist'
 import {
-  assistCall,
   bookMeeting,
   draftCallEmail,
   finishCall,
@@ -201,7 +201,13 @@ export function CallWorkspace({
     }
     state.running = true
     setThinking(true)
-    void assistCall(id)
+    // A plain route, not a server action, so it never queues behind other clicks.
+    void fetch('/api/calls/assist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callId: id }),
+    })
+      .then((reply) => reply.json() as Promise<{ ok: true; suggestion: CallSuggestion } | { ok: false; error: string }>)
       .then((response) => {
         if (!response.ok) return
         const { heard, say, next, meeting_time, callback_time, wants_email } = response.suggestion
@@ -420,36 +426,99 @@ export function CallWorkspace({
             : 'Ready to call'
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-5">
+    <div className="mx-auto max-w-[1400px] space-y-4 pb-28">
       <Link href="/dialer" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-3.5" />
         All leads
       </Link>
 
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
-          <Avatar name={lead.full_name} size="lg" />
+      {/* ── Call bar: who, number, timer and the call buttons, in one line ── */}
+      <Card
+        className={cn(
+          'sticky top-20 z-20 flex flex-col gap-3 p-3 backdrop-blur md:flex-row md:items-center',
+          phase === 'live' ? 'border-success/50 bg-card/95' : 'bg-card/95',
+        )}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <Avatar name={lead.full_name} />
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="truncate font-display text-2xl font-semibold tracking-tight">{lead.full_name}</h1>
+              <h1 className="truncate font-display text-lg font-semibold tracking-tight">{lead.full_name}</h1>
               <Badge tone={leadStatusTone[lead.status]}>{lead.status}</Badge>
             </div>
-            <p className="truncate text-sm text-muted-foreground">
+            <p className="truncate text-xs text-muted-foreground">
               {[lead.company !== lead.full_name ? lead.company : null, lead.industry].filter(Boolean).join(' · ') ||
                 'No company on file'}
               {' · '}
               {/* Rendered on the server and again in the browser; the minute can differ. */}
               <span suppressHydrationWarning>
-                their time: {describeSendTime(new Date(), zone).replace(/^\w+,?\s*/, '')}
+                their time {describeSendTime(new Date(), zone).replace(/^\w+,?\s*/, '')}
               </span>
             </p>
           </div>
         </div>
-        <Link href={`/targeting/${lead.id}`} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
-          <ExternalLink className="size-3.5" />
-          Lead page
-        </Link>
-      </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {onCall || phase === 'ending' ? (
+            <span className="font-mono text-sm text-muted-foreground">{number}</span>
+          ) : (
+            <Input
+              value={number}
+              onChange={(event) => setNumber(event.target.value)}
+              className="h-9 w-44 font-mono"
+              aria-label="Phone number"
+            />
+          )}
+
+          <span
+            className={cn(
+              'flex items-center gap-2 rounded-lg border px-3 py-1.5',
+              phase === 'live' ? 'border-success/40 text-success' : 'border-border text-muted-foreground',
+            )}
+          >
+            <span
+              className={cn(
+                'size-2 rounded-full',
+                phase === 'live' ? 'animate-pulse bg-success' : onCall ? 'bg-warning' : 'bg-muted-foreground/40',
+              )}
+            />
+            <span className="text-xs">{statusText}</span>
+            <span className="font-mono text-base tabular-nums text-foreground">{clock(seconds)}</span>
+          </span>
+
+          {onCall ? (
+            <>
+              <Button variant="outline" size="sm" onClick={toggleMute} disabled={phase !== 'live'}>
+                {muted ? <MicOff className="size-4" /> : <Mic className="size-4" />}
+                {muted ? 'Unmute' : 'Mute'}
+              </Button>
+              <Button size="sm" onClick={hangUp} className="bg-destructive text-white hover:brightness-110">
+                <PhoneOff className="size-4" />
+                Hang up
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              onClick={placeCall}
+              disabled={!canWrite || !voice.configured || phase === 'ending' || !toE164(number)}
+              className="bg-success text-white hover:brightness-110"
+            >
+              <PhoneCall className="size-4" />
+              Call
+            </Button>
+          )}
+
+          <Link
+            href={`/targeting/${lead.id}`}
+            className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
+            aria-label="Open lead page"
+            title="Lead page"
+          >
+            <ExternalLink className="size-4" />
+          </Link>
+        </div>
+      </Card>
 
       {!voice.configured ? (
         <p className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/[0.06] p-3 text-xs leading-5">
@@ -460,192 +529,78 @@ export function CallWorkspace({
           </span>
         </p>
       ) : null}
+      {!toE164(number) && number && !onCall ? (
+        <p className="text-xs text-destructive">Use the full number with area code, e.g. +1 305 555 0100.</p>
+      ) : null}
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,340px)_minmax(0,1fr)_minmax(0,340px)]">
-        {/* ── Column 1: call controls and next steps ── */}
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
+        {/* ── Focus: what to say, then what was said ── */}
         <div className="space-y-4">
-          <Card className="p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="flex items-center gap-2 text-sm font-semibold">
-                <span
-                  className={cn(
-                    'size-2 rounded-full',
-                    phase === 'live' ? 'animate-pulse bg-success' : onCall ? 'bg-warning' : 'bg-muted-foreground/40',
-                  )}
-                />
-                {statusText}
-              </span>
-              <span className="font-mono text-lg tabular-nums">{phase === 'live' ? clock(seconds) : '0:00'}</span>
-            </div>
-            <Input
-              value={number}
-              onChange={(event) => setNumber(event.target.value)}
-              disabled={onCall}
-              className="font-mono"
-              aria-label="Phone number"
-            />
-            {!toE164(number) && number ? (
-              <p className="mt-1.5 text-xs text-destructive">Use the full number with area code.</p>
-            ) : null}
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {onCall ? (
-                <>
-                  <Button variant="destructive" onClick={hangUp}>
-                    <PhoneOff className="size-4" />
-                    Hang up
-                  </Button>
-                  <Button variant="outline" onClick={toggleMute} disabled={phase !== 'live'}>
-                    {muted ? <MicOff className="size-4" /> : <Mic className="size-4" />}
-                    {muted ? 'Unmute' : 'Mute'}
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  onClick={placeCall}
-                  disabled={!canWrite || !voice.configured || phase === 'ending' || !toE164(number)}
-                  className="col-span-2 bg-success text-white hover:brightness-110"
-                >
-                  <PhoneCall className="size-4" />
-                  Call {number}
-                </Button>
-              )}
-            </div>
-          </Card>
-
-          <Panel title="Next steps" icon={Sparkles}>
-            {detected.meetingTime || detected.callbackTime || detected.wantsEmail ? (
-              <div className="mb-3 space-y-1.5 rounded-lg border border-primary/25 bg-primary/[0.06] p-2.5 text-xs">
-                <p className="font-medium text-primary">Claude heard:</p>
-                {detected.meetingTime ? (
-                  <p>Meeting · {describeSendTime(new Date(detected.meetingTime), zone)}</p>
-                ) : null}
-                {detected.callbackTime ? (
-                  <p>Call back · {describeSendTime(new Date(detected.callbackTime), zone)}</p>
-                ) : null}
-                {detected.wantsEmail ? <p>Wants details by email</p> : null}
-              </div>
-            ) : (
-              <p className="mb-3 text-xs leading-5 text-muted-foreground">
-                During the call Claude listens for a meeting time, a call-back time or a request for email, and fills
-                these in for you.
-              </p>
+          <Card
+            className={cn(
+              'p-5',
+              latest || thinking ? 'border-primary/40' : undefined,
             )}
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="brand" size="sm" className="col-span-2" onClick={openMeeting} disabled={!canWrite}>
-                <CalendarCheck className="size-3.5" />
-                Schedule meeting
-                {detected.meetingTime ? ` · ${describeSendTime(new Date(detected.meetingTime), zone)}` : ''}
-              </Button>
-              <Button
-                variant={detected.wantsEmail ? 'default' : 'outline'}
-                size="sm"
-                className="col-span-2"
-                onClick={openEmail}
-                disabled={!canWrite || !lead.email}
-                title={lead.email ? undefined : 'No email address on file'}
-              >
-                <Mail className="size-3.5" />
-                Send follow-up email
-              </Button>
-              <Button variant="outline" size="sm" onClick={openCallback} disabled={!canWrite}>
-                <CalendarClock className="size-3.5" />
-                Call back later
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => markOutcome('no_answer')} disabled={!canWrite || acting}>
-                <PhoneMissed className="size-3.5" />
-                No answer
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="col-span-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => markOutcome('not_interested')}
-                disabled={!canWrite || acting}
-              >
-                <ThumbsDown className="size-3.5" />
-                Not interested
-              </Button>
-            </div>
-          </Panel>
-
-          {result ? (
-            <Panel title="Call notes" icon={Bot} action={<Badge tone="brand">{result.outcome}</Badge>}>
-              <p className="text-sm leading-6 whitespace-pre-wrap text-muted-foreground">
-                {result.summary ?? 'No conversation was transcribed.'}
-              </p>
-              <p className="mt-2 text-[11px] text-muted-foreground">Saved to the lead&apos;s timeline.</p>
-            </Panel>
-          ) : null}
-
-          {recentCalls.length > 0 ? (
-            <Panel title="Previous calls" icon={PhoneCall}>
-              <ul className="space-y-3">
-                {recentCalls.map((call) => (
-                  <li key={call.id} className="text-xs">
-                    <p className="text-muted-foreground">
-                      {formatRelative(call.started_at)} · {call.status}
-                      {call.duration_seconds ? ` · ${clock(call.duration_seconds)}` : ''}
-                    </p>
-                    {call.summary ? <p className="mt-1 leading-5 whitespace-pre-wrap">{call.summary}</p> : null}
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-          ) : null}
-        </div>
-
-        {/* ── Column 2: live coach and transcript ── */}
-        <div className="space-y-4">
-          <Panel
-            title="AI coach"
-            icon={Bot}
-            className="min-h-64"
-            action={
-              thinking ? (
-                <Spinner className="size-3.5 text-primary" />
-              ) : phase === 'live' && callId ? (
-                <Button variant="ghost" size="sm" onClick={() => askCoach(callId)}>
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <Bot className="size-4 text-primary" />
+              <h2 className="text-sm font-semibold">Say this</h2>
+              {thinking ? (
+                <span className="flex items-center gap-1.5 text-xs text-primary">
+                  <Spinner className="size-3.5" />
+                  Listening to the lead…
+                </span>
+              ) : null}
+              {phase === 'live' && callId && !thinking ? (
+                <Button variant="ghost" size="sm" className="ml-auto" onClick={() => askCoach(callId)}>
                   <Sparkles className="size-3.5" />
                   Ask now
                 </Button>
-              ) : null
-            }
-          >
+              ) : null}
+            </div>
+
             {latest ? (
-              <div className="space-y-3">
-                <div className="rounded-xl border border-primary/30 bg-primary/[0.07] p-4">
-                  {latest.heard ? <p className="mb-2 text-xs font-medium text-warning">They said: {latest.heard}</p> : null}
-                  <p className="text-lg leading-7 font-medium">{latest.say}</p>
-                  {latest.next ? <p className="mt-2 text-xs text-muted-foreground">Tip: {latest.next}</p> : null}
-                </div>
-                {suggestions.slice(1, 4).map((item) => (
-                  <div key={item.id} className="rounded-lg border border-border p-2.5 text-xs text-muted-foreground">
-                    {item.heard ? <span className="text-foreground">{item.heard} → </span> : null}
-                    {item.say}
-                  </div>
-                ))}
-              </div>
+              <>
+                {latest.heard ? <p className="mb-2 text-sm font-medium text-warning">They said: {latest.heard}</p> : null}
+                <p className="text-2xl leading-snug font-semibold tracking-tight">{latest.say}</p>
+                {latest.next ? <p className="mt-3 text-sm text-muted-foreground">Tip: {latest.next}</p> : null}
+                {suggestions.length > 1 ? (
+                  <details className="mt-4 text-xs text-muted-foreground">
+                    <summary className="cursor-pointer select-none hover:text-foreground">
+                      Earlier suggestions ({suggestions.length - 1})
+                    </summary>
+                    <ul className="mt-2 space-y-1.5">
+                      {suggestions.slice(1).map((item) => (
+                        <li key={item.id}>
+                          {item.heard ? <span className="text-foreground">{item.heard} → </span> : null}
+                          {item.say}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </>
             ) : (
-              <p className="m-auto max-w-sm py-8 text-center text-xs leading-5 text-muted-foreground">
+              <p className="py-6 text-center text-sm text-muted-foreground">
                 {phase === 'live'
-                  ? 'Listening… when the lead asks something, the answer appears here.'
-                  : 'During a call, Claude suggests exactly what to say whenever the lead speaks.'}
+                  ? 'Listening… when the lead speaks, what to say back appears here.'
+                  : 'Start the call. Claude listens and tells you what to say whenever the lead speaks.'}
               </p>
             )}
-          </Panel>
+          </Card>
 
-          <Panel title="Live transcript" icon={Mic} className="min-h-80">
+          <Panel title="Live transcript" icon={Mic}>
             {transcript.length === 0 ? (
-              <p className="m-auto py-8 text-center text-xs text-muted-foreground">
+              <p className="py-6 text-center text-xs text-muted-foreground">
                 {onCall ? 'Waiting for the first words…' : 'The conversation appears here as you talk.'}
               </p>
             ) : (
-              <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+              <div className="h-80 space-y-2 overflow-y-auto pr-1">
                 {transcript.map((line) => (
                   <div key={line.id} className={cn('flex', line.speaker === 'rep' ? 'justify-end' : 'justify-start')}>
                     <p
                       className={cn(
-                        'max-w-[85%] rounded-xl px-3 py-2 text-sm leading-6',
+                        'max-w-[80%] rounded-xl px-3 py-2 text-sm leading-6',
                         line.speaker === 'rep' ? 'bg-primary/15' : 'bg-secondary',
                       )}
                     >
@@ -660,13 +615,41 @@ export function CallWorkspace({
               </div>
             )}
           </Panel>
+
+          {result || recentCalls.length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              {result ? (
+                <Panel title="Call notes" icon={Bot} action={<Badge tone="brand">{result.outcome}</Badge>}>
+                  <p className="text-sm leading-6 whitespace-pre-wrap text-muted-foreground">
+                    {result.summary ?? 'No conversation was transcribed.'}
+                  </p>
+                  <p className="mt-2 text-[11px] text-muted-foreground">Saved to the lead&apos;s timeline.</p>
+                </Panel>
+              ) : null}
+              {recentCalls.length > 0 ? (
+                <Panel title="Previous calls" icon={PhoneCall}>
+                  <ul className="max-h-64 space-y-3 overflow-y-auto pr-1">
+                    {recentCalls.map((call) => (
+                      <li key={call.id} className="text-xs">
+                        <p className="text-muted-foreground">
+                          {formatRelative(call.started_at)} · {call.status}
+                          {call.duration_seconds ? ` · ${clock(call.duration_seconds)}` : ''}
+                        </p>
+                        {call.summary ? <p className="mt-1 leading-5 whitespace-pre-wrap">{call.summary}</p> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </Panel>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
-        {/* ── Column 3: sales script ── */}
+        {/* ── Reference: the script, out of the way ── */}
         <Panel
           title="Call script"
           icon={Sparkles}
-          className="lg:col-span-2 xl:col-span-1"
+          className="lg:sticky lg:top-44 lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto"
           action={
             brief && canWrite ? (
               <Button variant="ghost" size="sm" onClick={writeBrief} disabled={briefPending}>
@@ -694,6 +677,67 @@ export function CallWorkspace({
             </div>
           )}
         </Panel>
+      </div>
+
+      {/* ── Next steps: always at the bottom, out of the way until needed ── */}
+      <div className="fixed inset-x-0 bottom-0 z-30 lg:left-64">
+        <div className="mx-auto max-w-[1400px] px-4 pb-4 sm:px-6 lg:px-8">
+          <Card className="flex flex-col gap-3 bg-card/95 p-3 shadow-2xl backdrop-blur md:flex-row md:items-center">
+            <div className="min-w-0 flex-1 text-xs">
+              {detected.meetingTime || detected.callbackTime || detected.wantsEmail ? (
+                <p className="truncate text-primary">
+                  <Sparkles className="mr-1 inline size-3.5" />
+                  Claude heard:{' '}
+                  {[
+                    detected.meetingTime ? `meeting ${describeSendTime(new Date(detected.meetingTime), zone)}` : null,
+                    detected.callbackTime ? `call back ${describeSendTime(new Date(detected.callbackTime), zone)}` : null,
+                    detected.wantsEmail ? 'wants an email' : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              ) : (
+                <p className="truncate text-muted-foreground">
+                  Next step — times mentioned on the call are filled in for you.
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="brand" size="sm" onClick={openMeeting} disabled={!canWrite}>
+                <CalendarCheck className="size-3.5" />
+                Schedule meeting
+              </Button>
+              <Button
+                variant={detected.wantsEmail ? 'default' : 'outline'}
+                size="sm"
+                onClick={openEmail}
+                disabled={!canWrite || !lead.email}
+                title={lead.email ? undefined : 'No email address on file'}
+              >
+                <Mail className="size-3.5" />
+                Send email
+              </Button>
+              <Button variant="outline" size="sm" onClick={openCallback} disabled={!canWrite}>
+                <CalendarClock className="size-3.5" />
+                Call back later
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => markOutcome('no_answer')} disabled={!canWrite || acting}>
+                <PhoneMissed className="size-3.5" />
+                No answer
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => markOutcome('not_interested')}
+                disabled={!canWrite || acting}
+              >
+                <ThumbsDown className="size-3.5" />
+                Not interested
+              </Button>
+            </div>
+          </Card>
+        </div>
       </div>
 
       {/* ── Dialogs ── */}
