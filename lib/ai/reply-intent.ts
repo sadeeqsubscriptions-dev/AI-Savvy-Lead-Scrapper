@@ -28,10 +28,10 @@ export function stageForIntent(intent: ReplyIntent): LeadStatus | null {
   return null
 }
 
-export async function classifyReply(reply: string, ourEmail: string) {
+export async function classifyReply(reply: string, ourEmail: string, companyName: string) {
   return askClaudeJson({
     system:
-      'You triage replies to cold sales emails for AI Savvy, an AI consulting company. Classify the reply. ' +
+      `You triage replies to cold sales emails sent by ${companyName}. Classify the reply. ` +
       'interested = wants a call, more info, pricing, or says yes. question = asks something without clear interest. ' +
       'not_interested = declines. unsubscribe = asks to stop emailing. referral = points to another person. ' +
       'summary = one short sentence of what they said, for the sales rep.',

@@ -2,9 +2,8 @@ import { z } from 'zod'
 import { currentBrief } from '@/lib/ai/brief-shape'
 import { askClaudeJson, webFetchTool } from '@/lib/ai/claude'
 import type { Lead, LeadAiBrief } from '@/lib/supabase/types'
-import { COMPANY, TOTAL_STEPS, senderConfig } from './config'
-
-const SERVICE_NAMES = COMPANY.services.map((service) => service.name)
+import { TOTAL_STEPS } from './config'
+import { sellerBrief, type Seller } from './seller'
 
 const emailSchema = z.object({
   fit: z.boolean(),
@@ -15,19 +14,23 @@ const emailSchema = z.object({
   body: z.string(),
 })
 
-const jsonSchema = {
+const jsonSchema = (seller: Seller) => ({
   type: 'object',
   properties: {
     fit: { type: 'boolean', description: 'Is this a real business worth emailing?' },
     skip_reason: { type: 'string', description: 'Why not, when fit is false; otherwise empty' },
-    service: { type: 'string', enum: SERVICE_NAMES, description: 'The one service pitched' },
+    service: {
+      type: 'string',
+      enum: seller.services.map((service) => service.name),
+      description: 'The one service pitched',
+    },
     why: { type: 'string', description: 'One sentence for the rep on why this service fits' },
     subject: { type: 'string', description: 'Email subject line' },
     body: { type: 'string', description: 'Plain-text email body, without a signature' },
   },
   required: ['fit', 'skip_reason', 'service', 'why', 'subject', 'body'],
   additionalProperties: false,
-}
+})
 
 export type DraftEmail = { subject: string; body: string; service: string; why: string }
 
@@ -37,17 +40,10 @@ export type ComposeResult =
   | { ok: true; email: DraftEmail }
   | { ok: false; error: string; notAFit?: string }
 
-function systemPrompt() {
-  const sender = senderConfig()
-  return `You are a senior sales development rep writing cold outreach for ${COMPANY.name} (${COMPANY.website}). You write in the first person as ${sender.name} (${sender.title}).
+function systemPrompt(seller: Seller) {
+  return `You are a senior sales development rep writing cold outreach for ${seller.companyName}. You write in the first person as ${seller.senderName} (${seller.senderTitle}).
 
-About ${COMPANY.name}: ${COMPANY.positioning}
-Founder: ${COMPANY.founder} You may mention the founder's 22+ years of software experience as credibility, but you are writing as ${sender.name}.
-
-Services:
-${COMPANY.services.map((service) => `- ${service.name}: ${service.pitch}`).join('\n')}
-
-Goal of every email: book a free 15-minute call. Booking link: ${COMPANY.bookingUrl}
+${sellerBrief(seller)}
 
 Qualify first. Set fit=false and explain in skip_reason for: government agencies, schools, patient-appeal or claims departments, large national corporations, directories, news or article pages, job boards, or when you cannot tell what the business does. When fit=false, return empty strings for subject and body.
 
@@ -56,7 +52,7 @@ Write like a top-performing SDR:
 - Then the problem: one time-sink a business like theirs has (use the sales brief's pain points when given).
 - Then the offer: ONE service, framed as a concrete outcome for them. One sentence of credibility at most.
 - Make it interactive: one easy question they can answer in a reply.
-- Close: ask for 15 minutes this week, booking link on its own line.
+- Close: ask for 15 minutes this week${seller.bookingUrl ? ', booking link on its own line' : ' (they reply to book)'}.
 - Last line: "If this isn't relevant, just reply 'no thanks' and I won't follow up."
 - 90-140 words. Plain text, short paragraphs, no markdown, no bullets, no emojis, no hype words (revolutionize, game-changer, cutting-edge, leverage, synergy).
 - Greeting: first name if the lead is clearly a person; otherwise "Hi {Company} team,".
@@ -135,10 +131,9 @@ ${isLast ? '- This is the final follow-up: say politely this is the last note, a
 - Set fit=true and skip_reason to an empty string; the lead is already qualified.`
 }
 
-export function signature() {
-  const sender = senderConfig()
-  return ['', sender.name, sender.title, COMPANY.website, sender.postalAddress]
-    .filter((line) => line !== null)
+export function signature(seller: Seller) {
+  return ['', seller.senderName, seller.senderTitle, seller.website, seller.postalAddress]
+    .filter((line): line is string => Boolean(line) || line === '')
     .join('\n')
 }
 
@@ -150,15 +145,20 @@ export async function composeEmail(
   lead: Lead,
   step: number,
   history: PriorEmail[] = [],
-  { force = false, brief = currentBrief(lead.ai_brief) }: { force?: boolean; brief?: LeadAiBrief | null } = {},
+  {
+    seller,
+    force = false,
+    brief = currentBrief(lead.ai_brief),
+  }: { seller: Seller; force?: boolean; brief?: LeadAiBrief | null },
 ): Promise<ComposeResult> {
   const result = await askClaudeJson({
-    system: systemPrompt(),
+    system: systemPrompt(seller),
     prompt: buildRequest(lead, brief, step, history, force),
-    schema: jsonSchema,
+    schema: jsonSchema(seller),
     parse: (value) => emailSchema.safeParse(value),
     // The brief already did the research; only fetch the site without one.
     tools: !brief && lead.website ? [webFetchTool(2)] : [],
+    tier: 'bulk',
     effort: 'medium',
     maxTokens: 6000,
   })
@@ -166,7 +166,7 @@ export async function composeEmail(
 
   const draft = result.data
   if (!draft.fit && !force && step === 0) {
-    const reason = draft.skip_reason.trim() || 'Not a good fit for AI Savvy.'
+    const reason = draft.skip_reason.trim() || `Not a good fit for ${seller.companyName}.`
     return { ok: false, error: `Skipped: ${reason}`, notAFit: reason }
   }
   if (draft.subject.trim().length === 0 || draft.body.trim().length < 20) {
@@ -177,7 +177,7 @@ export async function composeEmail(
     ok: true,
     email: {
       subject: draft.subject.trim(),
-      body: `${draft.body.trim()}\n${signature()}`,
+      body: `${draft.body.trim()}\n${signature(seller)}`,
       service: draft.service,
       why: draft.why.trim(),
     },

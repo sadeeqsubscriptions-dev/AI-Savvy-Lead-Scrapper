@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useActionState, useEffect, useState, useTransition } from 'react'
 import {
@@ -296,7 +297,8 @@ function WorkspacePanel({
     if (state.ok && state.message) toast.success(state.message)
   }, [state])
 
-  const usage = organization.lead_quota > 0 ? (leadCount / organization.lead_quota) * 100 : 0
+  const unlimited = organization.lead_quota >= 1_000_000_000
+  const usage = !unlimited && organization.lead_quota > 0 ? (leadCount / organization.lead_quota) * 100 : 0
 
   return (
     <div className="space-y-5">
@@ -350,13 +352,21 @@ function WorkspacePanel({
       </Card>
 
       <Card>
-        <CardHeader title="Usage" description="Included in the current plan" />
+        <CardHeader
+          title="Usage"
+          description="Included in the current plan"
+          action={
+            <Link href="/billing" className="text-xs font-medium text-primary hover:underline">
+              Plan & billing
+            </Link>
+          }
+        />
         <div className="space-y-4 px-5 pb-5">
           <div>
             <div className="mb-2 flex items-baseline justify-between text-sm">
               <span className="text-muted-foreground">Leads stored</span>
               <span className="font-mono">
-                {formatNumber(leadCount)} / {formatNumber(organization.lead_quota)}
+                {formatNumber(leadCount)} / {unlimited ? 'unlimited' : formatNumber(organization.lead_quota)}
               </span>
             </div>
             <Progress value={usage} />

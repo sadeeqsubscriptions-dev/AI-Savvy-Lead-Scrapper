@@ -3,7 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { generateBrief } from '@/lib/ai/brief'
 import { isAdmin, requireSession } from '@/lib/auth'
-import { queueOutreach } from '@/lib/outreach/engine'
+import { requireFeature } from '@/lib/billing/entitlements'
+import { chargeAiLead, queueOutreach } from '@/lib/outreach/engine'
+import { NO_PROFILE_ERROR, sellerFor } from '@/lib/outreach/seller'
 import { createClient } from '@/lib/supabase/server'
 import type { LeadAiBrief } from '@/lib/supabase/types'
 
@@ -27,7 +29,15 @@ export async function generateLeadBrief(leadId: string): Promise<BriefResult> {
     return { ok: false, error: 'This lead is not assigned to you.' }
   }
 
-  const result = await generateBrief(lead, session.userId)
+  const allowed = await requireFeature(session.organization.id, 'ai')
+  if (!allowed.ok) return allowed
+  const seller = await sellerFor(session.organization.id)
+  if (!seller) return { ok: false, error: NO_PROFILE_ERROR }
+  // Research counts as this lead's one AI-worked unit (its emails come free after).
+  const charged = await chargeAiLead(supabase, lead)
+  if (!charged.ok) return charged
+
+  const result = await generateBrief(lead, session.userId, seller)
   if (!result.ok) return result
 
   await supabase
@@ -40,7 +50,7 @@ export async function generateLeadBrief(leadId: string): Promise<BriefResult> {
   // business-hours window (weekdays, their time zone, 25 new per day).
   let scheduledFor: string | null = null
   let queueNote: string | null = null
-  if (lead.email) {
+  if (lead.email && allowed.entitlements.plan.features.autopilot) {
     const queued = await queueOutreach(supabase, { orgId: session.organization.id, leadId, by: session.userId })
     if (queued.ok) scheduledFor = queued.label
     else queueNote = queued.error

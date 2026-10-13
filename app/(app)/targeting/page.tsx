@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { PlanNotice } from '@/components/billing/plan-notice'
 import { isAdmin, requireSession } from '@/lib/auth'
 import { getAssignableMembers, getLeadsByOwner } from '@/lib/queries'
 import { TargetingWorkspace } from '@/components/targeting/targeting-workspace'
@@ -26,15 +27,18 @@ export default async function TargetingPage({
   const leads = await getLeadsByOwner(session.organization.id, activeRepId)
 
   return (
-    <TargetingWorkspace
-      leads={leads}
-      members={admin ? members : []}
-      activeRepId={activeRepId}
-      activeRepName={
-        activeRepId === session.userId
-          ? 'You'
-          : (activeMember?.name ?? 'Unknown teammate')
-      }
-    />
+    <>
+      <PlanNotice orgId={session.organization.id} feature="ai" needsSetup />
+      <TargetingWorkspace
+        leads={leads}
+        members={admin ? members : []}
+        activeRepId={activeRepId}
+        activeRepName={
+          activeRepId === session.userId
+            ? 'You'
+            : (activeMember?.name ?? 'Unknown teammate')
+        }
+      />
+    </>
   )
 }

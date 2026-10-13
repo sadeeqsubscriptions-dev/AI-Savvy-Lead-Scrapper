@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { COMPANY, senderConfig } from '@/lib/outreach/config'
+import { sellerBrief, type Seller } from '@/lib/outreach/seller'
 import { leadTimezone } from '@/lib/outreach/schedule'
 import type { CallEvent, Lead, LeadAiBrief } from '@/lib/supabase/types'
 import { askClaudeJson } from './claude'
@@ -10,8 +10,6 @@ import { askClaudeJson } from './claude'
  * while the lead is still talking — plus anything actionable it heard: a
  * meeting time, a call-back time, or a request for an email.
  */
-
-const SERVICES = COMPANY.services.map((service) => `- ${service.name}: ${service.pitch}`).join('\n')
 
 type Line = Pick<CallEvent, 'speaker' | 'text'>
 
@@ -72,20 +70,17 @@ const suggestionSchema = z.object({
 
 export type CallSuggestion = z.infer<typeof suggestionSchema>
 
-export async function suggestReply(lead: Lead, brief: LeadAiBrief | null, events: Line[]) {
+export async function suggestReply(lead: Lead, brief: LeadAiBrief | null, events: Line[], seller: Seller) {
   const zone = leadTimezone(lead)
   return askClaudeJson({
-    system: `You are a live sales coach whispering to a rep from ${COMPANY.name} (${COMPANY.website}) during a cold call.
-${COMPANY.name}: ${COMPANY.positioning}
-Services:
-${SERVICES}
-Goal of the call: book a free 15-minute call (${COMPANY.bookingUrl}).
+    system: `You are a live sales coach whispering to a rep from ${seller.companyName} during a cold call.
+${sellerBrief(seller)}
 
 Answer FAST and SHORT. The rep reads this while talking.
 - heard: what the lead just asked or objected to, in under 8 words (empty if nothing needs answering).
 - say: the exact words the rep should say next. Max 2 short sentences, conversational, no jargon.
 - next: one tiny tip (e.g. "Ask how they book jobs today"), under 10 words, or empty.
-Answer questions about ${COMPANY.name} truthfully from the info above. If you don't know (e.g. exact pricing), have the rep say they'll cover it on the 15-minute call. Never invent prices, clients or results.
+Answer questions about ${seller.companyName} truthfully from the info above. If you don't know (e.g. exact pricing), have the rep say they'll cover it on the 15-minute call. Never invent prices, clients or results.
 
 ${TIME_RULES(zone)}`,
     prompt: `${context(lead, brief)}
@@ -122,9 +117,9 @@ const summarySchema = z.object({
 
 export type CallSummary = z.infer<typeof summarySchema>
 
-export async function summarizeCall(lead: Lead, events: Line[]) {
+export async function summarizeCall(lead: Lead, events: Line[], seller: Seller) {
   return askClaudeJson({
-    system: `You write short CRM notes after sales calls for ${COMPANY.name}. Plain, factual, no fluff.\n\n${TIME_RULES(leadTimezone(lead))}`,
+    system: `You write short CRM notes after sales calls for ${seller.companyName}. Plain, factual, no fluff.\n\n${TIME_RULES(leadTimezone(lead))}`,
     prompt: `Lead: ${lead.full_name}${lead.company ? ` (${lead.company})` : ''}
 
 Transcript:
@@ -159,14 +154,11 @@ export async function writeCallEmail(
   brief: LeadAiBrief | null,
   events: Line[],
   extra: { meetingTime: string | null },
+  seller: Seller,
 ) {
-  const sender = senderConfig()
   return askClaudeJson({
-    system: `You write the short email a sales rep sends right after a phone call, as ${sender.name} (${sender.title}) from ${COMPANY.name} (${COMPANY.website}).
-${COMPANY.name}: ${COMPANY.positioning}
-Services:
-${SERVICES}
-Booking link for a free 15-minute call: ${COMPANY.bookingUrl}
+    system: `You write the short email a sales rep sends right after a phone call, as ${seller.senderName} (${seller.senderTitle}) from ${seller.companyName}.
+${sellerBrief(seller)}
 
 Rules: 60-120 words, plain text, no markdown. Thank them for the call, recap in one or two sentences what they said they need, state the one service that fits and the concrete outcome, then the next step (the agreed meeting time if there is one; otherwise the booking link). Never invent facts not in the call or brief. No signature — it is added automatically. Subject: short and specific, no "Re:".`,
     prompt: `${context(lead, brief)}

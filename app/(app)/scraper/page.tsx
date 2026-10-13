@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { PlanNotice } from '@/components/billing/plan-notice'
 import { ScraperWorkspace } from '@/components/scraper/scraper-workspace'
 import { canWrite, requireSession } from '@/lib/auth'
 import { getPendingRecordCount, getScrapeJobs } from '@/lib/queries'
@@ -15,11 +16,14 @@ export default async function ScraperPage() {
   ])
 
   return (
-    <ScraperWorkspace
-      providers={listProviders()}
-      jobs={jobs}
-      canWrite={canWrite(session.role)}
-      pendingReview={pendingReview}
-    />
+    <>
+      <PlanNotice orgId={session.organization.id} feature="scraping" />
+      <ScraperWorkspace
+        providers={listProviders()}
+        jobs={jobs}
+        canWrite={canWrite(session.role)}
+        pendingReview={pendingReview}
+      />
+    </>
   )
 }

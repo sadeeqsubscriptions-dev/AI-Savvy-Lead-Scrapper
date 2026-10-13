@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { canWrite, requireSession } from '@/lib/auth'
+import { storedLeadsMessage, storedLeadsRoom } from '@/lib/billing/entitlements'
 import { LEAD_STATUSES } from '@/lib/constants'
 import { createClient } from '@/lib/supabase/server'
 import { failure, optionalEmail, optionalText, type ActionState } from '@/lib/actions/state'
@@ -59,6 +60,9 @@ export async function createLead(_prev: ActionState, formData: FormData): Promis
 
   const parsed = readLeadForm(formData)
   if (!parsed.success) return failure(parsed.error)
+
+  const space = await storedLeadsRoom(session.organization.id)
+  if (space.room < 1) return { error: storedLeadsMessage(space.cap) }
 
   const supabase = await createClient()
   const { error } = await supabase.from('leads').insert({
@@ -295,7 +299,7 @@ export type ImportRow = z.input<typeof importRowSchema>
 export async function importLeads(rows: ImportRow[]) {
   const session = await requireSession()
   if (!canWrite(session.role)) return { ok: false as const, error: 'Your role cannot add leads.' }
-  if (rows.length === 0) return { ok: true as const, imported: 0, duplicates: 0, invalid: 0 }
+  if (rows.length === 0) return { ok: true as const, imported: 0, duplicates: 0, invalid: 0, overLimit: null }
   if (rows.length > 500) return { ok: false as const, error: 'Send at most 500 rows at a time.' }
 
   const supabase = await createClient()
@@ -343,6 +347,8 @@ export async function importLeads(rows: ImportRow[]) {
   }
 
   let duplicates = 0
+  const space = await storedLeadsRoom(orgId)
+  let tooMany = 0
   const fresh = candidates.filter((lead) => {
     if (!lead.email) return true
     if (existing.has(lead.email)) {
@@ -352,6 +358,11 @@ export async function importLeads(rows: ImportRow[]) {
     existing.add(lead.email)
     return true
   })
+  // Free plan: keep only what fits under the stored-leads cap.
+  if (fresh.length > space.room) {
+    tooMany = fresh.length - space.room
+    fresh.splice(space.room)
+  }
 
   let imported = 0
   if (fresh.length > 0) {
@@ -371,5 +382,11 @@ export async function importLeads(rows: ImportRow[]) {
   revalidateLeadViews()
   revalidatePath('/targeting')
   revalidatePath('/outreach')
-  return { ok: true as const, imported, duplicates, invalid }
+  return {
+    ok: true as const,
+    imported,
+    duplicates,
+    invalid,
+    overLimit: tooMany > 0 ? `${tooMany} rows skipped: ${storedLeadsMessage(space.cap)}` : null,
+  }
 }

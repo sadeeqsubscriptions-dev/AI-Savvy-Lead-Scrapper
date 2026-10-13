@@ -2,6 +2,7 @@ import { NextResponse, after, type NextRequest } from 'next/server'
 import { currentBrief } from '@/lib/ai/brief-shape'
 import { suggestReply } from '@/lib/ai/call-assist'
 import { canWrite, getSession } from '@/lib/auth'
+import { NO_PROFILE_ERROR, sellerFor } from '@/lib/outreach/seller'
 import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
@@ -48,7 +49,10 @@ export async function POST(request: NextRequest) {
   if (!lead) return NextResponse.json({ ok: false, error: 'Lead not found.' }, { status: 404 })
   if (!events || events.length === 0) return NextResponse.json({ ok: false, error: 'Nothing said yet.' })
 
-  const result = await suggestReply(lead, currentBrief(lead.ai_brief), [...events].reverse())
+  const seller = await sellerFor(session.organization.id)
+  if (!seller) return NextResponse.json({ ok: false, error: NO_PROFILE_ERROR })
+
+  const result = await suggestReply(lead, currentBrief(lead.ai_brief), [...events].reverse(), seller)
   if (!result.ok) return NextResponse.json(result)
 
   after(async () => {

@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { currentBrief } from '@/lib/ai/brief-shape'
 import { canWrite, requireSession } from '@/lib/auth'
-import { mailConfigured } from '@/lib/outreach/mailer'
+import { mailboxFor } from '@/lib/outreach/mailbox'
 import { leadTimezone } from '@/lib/outreach/schedule'
 import { createClient } from '@/lib/supabase/server'
 import type { Call } from '@/lib/supabase/types'
@@ -51,7 +51,7 @@ export default async function CallPage({ params }: { params: Promise<{ id: strin
       recentCalls={(calls as Call[] | null) ?? []}
       canWrite={canWrite(session.role)}
       voice={{ configured: voiceConfigured(), missing: missingVoiceSettings() }}
-      mailReady={mailConfigured()}
+      mailReady={Boolean(await mailboxFor(session.organization.id))}
     />
   )
 }

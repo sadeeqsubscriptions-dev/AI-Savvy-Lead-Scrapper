@@ -62,7 +62,7 @@ export default async function DashboardPage() {
       .select('id', { count: 'exact', head: true })
       .eq('org_id', orgId)
       .not('metadata->outreach_queue', 'is', null),
-    sentToday(supabase, true),
+    sentToday(supabase, orgId, true),
     autopilotCandidates(supabase, orgId),
   ])
 

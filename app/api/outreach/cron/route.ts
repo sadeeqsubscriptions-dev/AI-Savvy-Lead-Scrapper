@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse, after, type NextRequest } from 'next/server'
-import { recordAutopilotRun, runOutreachCycle } from '@/lib/outreach/engine'
+import { runAllWorkspaces } from '@/lib/outreach/engine'
 import { createAdminClient, hasAdminCredentials } from '@/lib/supabase/admin'
 
 // IMAP + SMTP need raw TCP sockets, and each follow-up waits on Claude.
@@ -37,10 +37,10 @@ export async function GET(request: NextRequest) {
   // Leave headroom under maxDuration (300s) for the send in flight to finish.
   const deadline = Date.now() + 200_000
   after(async () => {
-    const admin = createAdminClient()
-    const result = await runOutreachCycle(admin, undefined, deadline)
-    await recordAutopilotRun(admin, result)
-    console.log('[outreach-cron]', JSON.stringify(result))
+    // Every workspace with a connected inbox: its replies, follow-ups and
+    // new leads, each with its own inbox, sales profile and plan limits.
+    const results = await runAllWorkspaces(createAdminClient(), deadline)
+    console.log('[outreach-cron]', JSON.stringify(results))
   })
   return NextResponse.json({ started: true }, { status: 202 })
 }

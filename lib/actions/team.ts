@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { isAdmin, requireSession } from '@/lib/auth'
+import { seatsLeft } from '@/lib/billing/entitlements'
 import { createClient } from '@/lib/supabase/server'
 import { failure, type ActionState } from '@/lib/actions/state'
 import type { MemberRole } from '@/lib/supabase/types'
@@ -22,6 +23,13 @@ export async function inviteMember(_prev: ActionState, formData: FormData): Prom
   })
 
   if (!parsed.success) return failure(parsed.error)
+
+  const seats = await seatsLeft(session.organization.id)
+  if (seats.left < 1) {
+    return {
+      error: `The ${seats.plan.name} plan includes ${seats.seats} user${seats.seats === 1 ? '' : 's'}. Upgrade on the Billing page to invite more.`,
+    }
+  }
 
   const supabase = await createClient()
 

@@ -4,126 +4,140 @@ import { simpleParser } from 'mailparser'
 import nodemailer from 'nodemailer'
 
 /**
- * Email transport: the sender's own mailbox over SMTP (send) and IMAP (read
- * replies). Presets cover Zoho and Gmail; SMTP_HOST / IMAP_HOST override them
- * for any other provider.
+ * Email transport for one workspace's own mailbox: SMTP to send, IMAP to read
+ * replies. Every function takes the Mailbox to use — see mailbox.ts for where
+ * it comes from (a customer's connected inbox, or the env mailbox for the
+ * AI Savvy team's workspace).
  */
-type Provider = 'zoho' | 'gmail'
 
-function presetHosts(provider: Provider) {
-  if (provider === 'gmail') return { smtp: 'smtp.gmail.com', imap: 'imap.gmail.com' }
+export type MailProvider = 'zoho' | 'gmail' | 'outlook' | 'custom'
 
-  // Zoho runs separate data centers (zoho.com, zoho.eu, zoho.in, …) and uses
-  // the "pro" hosts for mailboxes on your own domain.
-  const region = process.env.ZOHO_REGION || 'com'
-  const personal = process.env.ZOHO_ACCOUNT_TYPE === 'personal'
+export type Mailbox = {
+  provider: MailProvider
+  user: string
+  pass: string
+  smtpHost: string
+  smtpPort: number
+  imapHost: string
+  imapPort: number
+}
+
+/** Standard hosts for the providers customers pick in Settings. */
+export function presetHosts(provider: MailProvider, zohoRegion = 'com') {
+  if (provider === 'gmail') return { smtpHost: 'smtp.gmail.com', smtpPort: 465, imapHost: 'imap.gmail.com', imapPort: 993 }
+  if (provider === 'outlook') {
+    return { smtpHost: 'smtp-mail.outlook.com', smtpPort: 587, imapHost: 'outlook.office365.com', imapPort: 993 }
+  }
+  // Zoho mailboxes on your own domain use the "pro" hosts; regions differ.
   return {
-    smtp: `${personal ? 'smtp' : 'smtppro'}.zoho.${region}`,
-    imap: `${personal ? 'imap' : 'imappro'}.zoho.${region}`,
+    smtpHost: `smtppro.zoho.${zohoRegion}`,
+    smtpPort: 465,
+    imapHost: `imappro.zoho.${zohoRegion}`,
+    imapPort: 993,
   }
 }
 
-function mailEnv() {
+/** The mailbox in the environment (EMAIL_USER / EMAIL_APP_PASSWORD), if set. */
+export function envMailbox(): Mailbox | null {
   const user = process.env.EMAIL_USER ?? ''
-  const provider: Provider =
-    process.env.EMAIL_PROVIDER === 'gmail' ||
-    (!process.env.EMAIL_PROVIDER && /@(gmail|googlemail)\.com$/i.test(user))
+  const pass = (process.env.EMAIL_APP_PASSWORD ?? '').replace(/\s+/g, '')
+  if (!user || !pass) return null
+
+  const provider: MailProvider =
+    process.env.EMAIL_PROVIDER === 'gmail' || (!process.env.EMAIL_PROVIDER && /@(gmail|googlemail)\.com$/i.test(user))
       ? 'gmail'
       : 'zoho'
-  const hosts = presetHosts(provider)
-
+  const hosts = presetHosts(provider, process.env.ZOHO_REGION || 'com')
   return {
     provider,
     user,
-    pass: (process.env.EMAIL_APP_PASSWORD ?? '').replace(/\s+/g, ''),
-    smtpHost: process.env.SMTP_HOST || hosts.smtp,
-    smtpPort: Number(process.env.SMTP_PORT) || 465,
-    imapHost: process.env.IMAP_HOST || hosts.imap,
-    imapPort: Number(process.env.IMAP_PORT) || 993,
+    pass,
+    smtpHost: process.env.SMTP_HOST || hosts.smtpHost,
+    smtpPort: Number(process.env.SMTP_PORT) || hosts.smtpPort,
+    imapHost: process.env.IMAP_HOST || hosts.imapHost,
+    imapPort: Number(process.env.IMAP_PORT) || hosts.imapPort,
   }
 }
 
-/** Web inbox for the configured provider, for the "Open mailbox" link. */
-export function webmailUrl() {
-  const env = mailEnv()
-  if (env.provider === 'gmail') return 'https://mail.google.com/'
-  return `https://mail.zoho.${process.env.ZOHO_REGION || 'com'}/`
+/** Web inbox for the mailbox's provider, for the "Open mailbox" link. */
+export function webmailUrl(mailbox: Mailbox | null) {
+  if (!mailbox) return 'https://mail.google.com/'
+  if (mailbox.provider === 'gmail') return 'https://mail.google.com/'
+  if (mailbox.provider === 'outlook') return 'https://outlook.live.com/mail/'
+  const region = mailbox.imapHost.match(/zoho\.([a-z.]+)$/)?.[1] ?? 'com'
+  return mailbox.provider === 'zoho' ? `https://mail.zoho.${region}/` : 'about:blank'
 }
 
-export function mailConfigured() {
-  const env = mailEnv()
-  return Boolean(env.user && env.pass)
-}
-
-export function senderAddress() {
-  return mailEnv().user.toLowerCase()
-}
-
-export function newMessageId() {
-  const domain = senderAddress().split('@')[1] || 'aisavvy.us'
+export function newMessageId(mailbox: Mailbox) {
+  const domain = mailbox.user.split('@')[1] || 'mail.local'
   return `<${randomUUID()}@${domain}>`
 }
 
-function createTransport() {
-  const env = mailEnv()
+function createTransport(mailbox: Mailbox) {
   return nodemailer.createTransport({
-    host: env.smtpHost,
-    port: env.smtpPort,
-    secure: env.smtpPort === 465,
-    auth: { user: env.user, pass: env.pass },
+    host: mailbox.smtpHost,
+    port: mailbox.smtpPort,
+    secure: mailbox.smtpPort === 465,
+    auth: { user: mailbox.user, pass: mailbox.pass },
   })
 }
 
-function createImap() {
-  const env = mailEnv()
+function createImap(mailbox: Mailbox) {
   return new ImapFlow({
-    host: env.imapHost,
-    port: env.imapPort,
+    host: mailbox.imapHost,
+    port: mailbox.imapPort,
     secure: true,
-    auth: { user: env.user, pass: env.pass },
+    auth: { user: mailbox.user, pass: mailbox.pass },
     logger: false,
   })
 }
 
-function explain(part: 'SMTP' | 'IMAP', error: unknown) {
-  const env = mailEnv()
+function explain(mailbox: Mailbox, part: 'SMTP' | 'IMAP', error: unknown) {
   // imapflow reports a bad login as "Command failed" and puts the server's
   // words in `responseText`, flagging it with `authenticationFailed`.
   const details = error as { responseText?: string; authenticationFailed?: boolean }
   const raw = [error instanceof Error ? error.message : String(error), details?.responseText]
     .filter(Boolean)
     .join(': ')
-  const host = part === 'SMTP' ? env.smtpHost : env.imapHost
+  const host = part === 'SMTP' ? mailbox.smtpHost : mailbox.imapHost
 
   if (details?.authenticationFailed || /auth|credential|password|login|535|invalid/i.test(raw)) {
-    return `${part} login rejected on ${host}. Use an app-specific password (not your normal password)${
-      env.provider === 'zoho' ? ', and make sure IMAP Access is enabled in Zoho Mail settings and your plan includes IMAP/SMTP (Mail Lite or higher)' : ''
-    }. (${raw})`
+    const hint =
+      mailbox.provider === 'zoho'
+        ? ', and make sure IMAP Access is on in Zoho Mail settings and your Zoho plan includes IMAP/SMTP'
+        : mailbox.provider === 'gmail'
+          ? ' (Google account → Security → 2-Step Verification → App passwords)'
+          : ''
+    return `${part} login rejected on ${host}. Use an app password, not your normal password${hint}. (${raw})`
   }
   if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|getaddrinfo/i.test(raw)) {
-    return `${part} could not reach ${host}. Check ZOHO_REGION (com, eu, in, com.au…) matches your Zoho data center. (${raw})`
+    return `${part} could not reach ${host}. Check the provider (and Zoho region) in your email settings. (${raw})`
   }
   return `${part} failed on ${host}: ${raw}`
 }
 
 /** Logs in to SMTP and IMAP without sending anything, for the setup check. */
-export async function testMailConnection() {
-  const env = mailEnv()
-  const result = { smtp: null as string | null, imap: null as string | null, smtpHost: env.smtpHost, imapHost: env.imapHost }
-
-  try {
-    await createTransport().verify()
-  } catch (error) {
-    result.smtp = explain('SMTP', error)
+export async function testMailConnection(mailbox: Mailbox) {
+  const result = {
+    smtp: null as string | null,
+    imap: null as string | null,
+    smtpHost: mailbox.smtpHost,
+    imapHost: mailbox.imapHost,
   }
 
-  const client = createImap()
+  try {
+    await createTransport(mailbox).verify()
+  } catch (error) {
+    result.smtp = explain(mailbox, 'SMTP', error)
+  }
+
+  const client = createImap(mailbox)
   try {
     await client.connect()
     const lock = await client.getMailboxLock('INBOX')
     lock.release()
   } catch (error) {
-    result.imap = explain('IMAP', error)
+    result.imap = explain(mailbox, 'IMAP', error)
   } finally {
     await client.logout().catch(() => undefined)
   }
@@ -131,23 +145,23 @@ export async function testMailConnection() {
   return result
 }
 
-export async function sendMail(message: {
-  fromName: string
-  to: string
-  subject: string
-  text: string
-  messageId: string
-  inReplyTo?: string | null
-  references?: string[]
-  /** A calendar invite (.ics text) the lead can accept straight from the email. */
-  invite?: string
-}) {
-  const env = mailEnv()
-  const transport = createTransport()
-
+export async function sendMail(
+  mailbox: Mailbox,
+  message: {
+    fromName: string
+    to: string
+    subject: string
+    text: string
+    messageId: string
+    inReplyTo?: string | null
+    references?: string[]
+    /** A calendar invite (.ics text) the lead can accept straight from the email. */
+    invite?: string
+  },
+) {
   try {
-    await transport.sendMail({
-      from: { name: message.fromName, address: env.user },
+    await createTransport(mailbox).sendMail({
+      from: { name: message.fromName, address: mailbox.user },
       to: message.to,
       subject: message.subject,
       text: message.text,
@@ -156,11 +170,11 @@ export async function sendMail(message: {
       references: message.references?.length ? message.references : undefined,
       // Gives Gmail/Yahoo a one-click unsubscribe target; replies land in the
       // inbox, where the sync stops the sequence.
-      list: { unsubscribe: { url: `mailto:${env.user}?subject=unsubscribe`, comment: 'Unsubscribe' } },
+      list: { unsubscribe: { url: `mailto:${mailbox.user}?subject=unsubscribe`, comment: 'Unsubscribe' } },
       ...(message.invite ? { icalEvent: { method: 'REQUEST', filename: 'invite.ics', content: message.invite } } : {}),
     })
   } catch (error) {
-    throw new Error(explain('SMTP', error))
+    throw new Error(explain(mailbox, 'SMTP', error))
   }
 }
 
@@ -191,15 +205,16 @@ function headerValue(headers: Buffer | undefined, name: string) {
  * downloaded just for the matches.
  */
 export async function readInbox(
+  mailbox: Mailbox,
   since: Date,
   pick: (message: InboxMessage) => boolean,
 ): Promise<(InboxMessage & { text: string })[]> {
-  const client = createImap()
+  const client = createImap(mailbox)
 
   try {
     await client.connect()
   } catch (error) {
-    throw new Error(explain('IMAP', error))
+    throw new Error(explain(mailbox, 'IMAP', error))
   }
   const lock = await client.getMailboxLock('INBOX')
 
@@ -283,6 +298,7 @@ function icsText(value: string) {
 /** A standard calendar invite (works in Gmail, Outlook, Apple Calendar). */
 export function calendarInvite(event: {
   uid: string
+  organizer: string
   start: Date
   minutes: number
   title: string
@@ -290,7 +306,6 @@ export function calendarInvite(event: {
   attendee: { name: string; email: string }
   location?: string | null
 }) {
-  const organizer = senderAddress()
   return [
     'BEGIN:VCALENDAR',
     'PRODID:-//AI Savvy//Lead CRM//EN',
@@ -304,7 +319,7 @@ export function calendarInvite(event: {
     `SUMMARY:${icsText(event.title)}`,
     `DESCRIPTION:${icsText(event.description)}`,
     ...(event.location ? [`LOCATION:${icsText(event.location)}`] : []),
-    `ORGANIZER:mailto:${organizer}`,
+    `ORGANIZER:mailto:${event.organizer}`,
     `ATTENDEE;CN=${icsText(event.attendee.name)};RSVP=TRUE:mailto:${event.attendee.email}`,
     'STATUS:CONFIRMED',
     'END:VEVENT',

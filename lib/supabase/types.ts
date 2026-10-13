@@ -237,6 +237,8 @@ export type Call = {
   ended_at: string | null
   duration_seconds: number | null
   summary: string | null
+  /** Seconds counted against the plan (set once, by the Twilio status webhook). */
+  billed_seconds: number | null
   created_at: string
 }
 
@@ -256,6 +258,61 @@ export type OutreachSettings = {
   autopilot: boolean
   last_run_at: string | null
   last_run: Json
+  updated_at: string
+}
+
+export type PlanId = 'free' | 'starter' | 'growth' | 'pro' | 'internal'
+
+export type OrgBilling = {
+  org_id: string
+  plan: PlanId
+  status: 'active' | 'past_due' | 'canceled'
+  stripe_customer_id: string | null
+  stripe_subscription_id: string | null
+  period_start: string
+  period_end: string | null
+  twilio_number: string | null
+  twilio_number_sid: string | null
+  updated_at: string
+}
+
+export type OrgUsage = {
+  org_id: string
+  period_start: string
+  leads_found: number
+  ai_leads: number
+  call_seconds: number
+  bonus_leads: number
+  bonus_ai_leads: number
+  bonus_call_seconds: number
+}
+
+export type MailAccount = {
+  org_id: string
+  email: string
+  provider: string
+  smtp_host: string
+  smtp_port: number
+  imap_host: string
+  imap_port: number
+  password_encrypted: string
+  sender_name: string | null
+  sender_title: string | null
+  postal_address: string | null
+  verified_at: string | null
+  updated_at: string
+}
+
+export type SalesProfile = {
+  org_id: string
+  company_name: string
+  website: string | null
+  description: string
+  services: string
+  booking_url: string | null
+  sender_name: string | null
+  sender_title: string | null
+  postal_address: string | null
   updated_at: string
 }
 
@@ -402,7 +459,7 @@ export type Database = {
         Defaulted<
           Call,
           | 'id' | 'lead_id' | 'user_id' | 'status' | 'twilio_call_sid' | 'started_at'
-          | 'ended_at' | 'duration_seconds' | 'summary' | 'created_at'
+          | 'ended_at' | 'duration_seconds' | 'summary' | 'billed_seconds' | 'created_at'
         >,
         Partial<Call>
       >
@@ -416,6 +473,11 @@ export type Database = {
         Defaulted<OutreachSettings, 'autopilot' | 'last_run_at' | 'last_run' | 'updated_at'>,
         Partial<OutreachSettings>
       >
+      org_billing: Table<OrgBilling, Defaulted<OrgBilling, 'plan' | 'status' | 'stripe_customer_id' | 'stripe_subscription_id' | 'period_start' | 'period_end' | 'twilio_number' | 'twilio_number_sid' | 'updated_at'>, Partial<OrgBilling>>
+      org_usage: Table<OrgUsage, Defaulted<OrgUsage, 'leads_found' | 'ai_leads' | 'call_seconds' | 'bonus_leads' | 'bonus_ai_leads' | 'bonus_call_seconds'>, Partial<OrgUsage>>
+      mail_accounts: Table<MailAccount, Defaulted<MailAccount, 'provider' | 'smtp_port' | 'imap_port' | 'sender_name' | 'sender_title' | 'postal_address' | 'verified_at' | 'updated_at'>, Partial<MailAccount>>
+      sales_profiles: Table<SalesProfile, Defaulted<SalesProfile, 'website' | 'description' | 'services' | 'booking_url' | 'sender_name' | 'sender_title' | 'postal_address' | 'updated_at'>, Partial<SalesProfile>>
+      billing_events: Table<{ id: string; type: string; created_at: string }, { id: string; type: string; created_at?: string }, Partial<{ id: string; type: string }>>
       notifications: Table<
         Notification,
         Defaulted<Notification, 'id' | 'body' | 'href' | 'read_at' | 'created_at'>,
@@ -433,6 +495,11 @@ export type Database = {
       accept_invitation: { Args: { invite_token: string }; Returns: string }
       search_org: { Args: { target_org: string; term: string; max_results?: number }; Returns: SearchResult[] }
       seed_demo_data: { Args: { target_org: string }; Returns: number }
+      consume_usage: {
+        Args: { target_org: string; period: string; kind: string; amount: number; cap: number; partial?: boolean }
+        Returns: number
+      }
+      add_usage_bonus: { Args: { target_org: string; period: string; kind: string; amount: number }; Returns: void }
       reset_demo_data: { Args: { target_org: string }; Returns: void }
       is_org_member: { Args: { target_org: string }; Returns: boolean }
       is_org_admin: { Args: { target_org: string }; Returns: boolean }

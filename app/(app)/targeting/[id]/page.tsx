@@ -5,7 +5,7 @@ import { canWrite, requireSession } from '@/lib/auth'
 import { ineligibleReason, isDemoLead } from '@/lib/outreach/eligibility'
 import { estimateUpNext } from '@/lib/outreach/engine'
 import { describeSendTime, followUpEta, leadTimezone, nextSendWindow } from '@/lib/outreach/schedule'
-import { mailConfigured } from '@/lib/outreach/mailer'
+import { mailboxFor } from '@/lib/outreach/mailbox'
 import { createClient } from '@/lib/supabase/server'
 import type { Call, OutreachMessage, OutreachThread } from '@/lib/supabase/types'
 import type { ActivityItem } from '@/components/leads/activity-log'
@@ -78,7 +78,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       calls={(calls as Call[] | null) ?? []}
       activities={(activities as unknown as ActivityItem[] | null) ?? []}
       canWrite={canWrite(session.role)}
-      mailReady={mailConfigured()}
+      mailReady={Boolean(await mailboxFor(orgId))}
     />
   )
 }

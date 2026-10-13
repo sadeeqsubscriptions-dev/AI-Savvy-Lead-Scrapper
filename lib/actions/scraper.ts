@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { canWrite, requireSession } from '@/lib/auth'
+import { limitMessage, requireFeature, storedLeadsMessage, storedLeadsRoom } from '@/lib/billing/entitlements'
 import { createClient } from '@/lib/supabase/server'
 import { SEED_URL_PROVIDERS, getProvider, isProviderReady } from '@/lib/scraper/registry'
 import { collectSeeds } from '@/lib/scraper/seeds'
@@ -63,6 +64,16 @@ export async function createScrapeJob(
     }
   }
 
+  // Sample data is free for everyone; real sources are a paid feature and
+  // a job can never ask for more leads than the plan has left this month.
+  if (provider.id !== 'sample') {
+    const allowed = await requireFeature(session.organization.id, 'scraping')
+    if (!allowed.ok) return { error: allowed.error }
+    const left = allowed.entitlements.remaining.leadsFound
+    if (left < 1) return { error: limitMessage('leads_found') }
+    parsed.data.max_results = Math.min(parsed.data.max_results, left)
+  }
+
   const { name, locations, seed_urls: seedInput, ...rest } = parsed.data
 
   const seedUrls = collectSeeds({ seed_urls: seedInput }, '')
@@ -102,6 +113,9 @@ export async function createScrapeJob(
 export async function importJobRecords(jobId: string, recordIds?: string[]): Promise<ActionState> {
   const session = await requireSession()
   if (!canWrite(session.role)) return { error: 'Your role cannot import leads.' }
+
+  const space = await storedLeadsRoom(session.organization.id)
+  if (space.room < 1) return { error: storedLeadsMessage(space.cap) }
 
   const supabase = await createClient()
   const { data, error } = await supabase.rpc('import_scraped_records', {

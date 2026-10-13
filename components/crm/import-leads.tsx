@@ -122,6 +122,10 @@ export function ImportLeads({ open, onClose }: { open: boolean; onClose: () => v
       duplicates += result.duplicates
       invalid += result.invalid
       setProgress(Math.round(((start + CHUNK) / all.length) * 100))
+      if (result.overLimit) {
+        toast.error(result.overLimit)
+        break
+      }
     }
 
     toast.success(

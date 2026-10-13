@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { PlanNotice } from '@/components/billing/plan-notice'
 import { redirect } from 'next/navigation'
 import { requireSession } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
@@ -24,9 +25,12 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
     .limit(500)
 
   return (
-    <DialerList
-      leads={(data as DialerListLead[] | null) ?? []}
-      voice={{ configured: voiceConfigured(), missing: missingVoiceSettings() }}
-    />
+    <>
+      <PlanNotice orgId={session.organization.id} feature="calling" />
+      <DialerList
+        leads={(data as DialerListLead[] | null) ?? []}
+        voice={{ configured: voiceConfigured(), missing: missingVoiceSettings() }}
+      />
+    </>
   )
 }

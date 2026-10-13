@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { SettingsWorkspace } from '@/components/settings/settings-workspace'
 import { isAdmin, requireSession } from '@/lib/auth'
+import { getEntitlements } from '@/lib/billing/entitlements'
 import { listProviders } from '@/lib/scraper/registry'
 import { createClient } from '@/lib/supabase/server'
 
@@ -10,7 +11,7 @@ export default async function SettingsPage() {
   const session = await requireSession()
   const supabase = await createClient()
 
-  const [{ count: leadCount }, { count: memberCount }] = await Promise.all([
+  const [{ count: leadCount }, { count: memberCount }, entitlements] = await Promise.all([
     supabase
       .from('leads')
       .select('id', { count: 'exact', head: true })
@@ -19,12 +20,17 @@ export default async function SettingsPage() {
       .from('organization_members')
       .select('id', { count: 'exact', head: true })
       .eq('org_id', session.organization.id),
+    getEntitlements(session.organization.id),
   ])
 
   return (
     <SettingsWorkspace
       profile={session.profile}
-      organization={session.organization}
+      organization={{
+        ...session.organization,
+        plan: entitlements.plan.name,
+        lead_quota: entitlements.plan.limits.storedLeads,
+      }}
       role={session.role}
       email={session.email}
       leadCount={leadCount ?? 0}

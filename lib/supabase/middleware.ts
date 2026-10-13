@@ -13,6 +13,7 @@ const PUBLIC_ROUTES = [
   '/auth',
   '/api/outreach/cron',
   '/api/voice',
+  '/api/stripe/webhook',
 ]
 const AUTH_ROUTES = ['/login', '/signup', '/forgot-password']
 

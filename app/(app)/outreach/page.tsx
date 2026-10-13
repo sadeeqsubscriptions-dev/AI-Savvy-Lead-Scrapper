@@ -1,9 +1,11 @@
 import type { Metadata } from 'next'
+import { PlanNotice } from '@/components/billing/plan-notice'
 import { canWrite, requireSession } from '@/lib/auth'
 import { TOTAL_STEPS, senderConfig } from '@/lib/outreach/config'
 import { estimateUpNext, sentToday } from '@/lib/outreach/engine'
 import { followUpEta, leadTimezone } from '@/lib/outreach/schedule'
-import { mailConfigured, senderAddress, webmailUrl } from '@/lib/outreach/mailer'
+import { mailboxFor } from '@/lib/outreach/mailbox'
+import { webmailUrl } from '@/lib/outreach/mailer'
 import { getOutreachBoard } from '@/lib/queries'
 import { createClient } from '@/lib/supabase/server'
 import { OutreachWorkspace, type AutopilotState } from '@/components/outreach/outreach-workspace'
@@ -17,11 +19,12 @@ export default async function OutreachPage() {
   const session = await requireSession()
   const supabase = await createClient()
 
-  const [{ leads, threads }, newToday, settings, etas] = await Promise.all([
+  const [{ leads, threads }, newToday, settings, etas, mailbox] = await Promise.all([
     getOutreachBoard(session.organization.id),
-    sentToday(supabase, true),
+    sentToday(supabase, session.organization.id, true),
     supabase.from('outreach_settings').select('*').eq('org_id', session.organization.id).maybeSingle(),
     estimateUpNext(supabase, session.organization.id),
+    mailboxFor(session.organization.id),
   ])
 
   // Follow-ups wait for the lead's business hours, like first emails.
@@ -42,21 +45,24 @@ export default async function OutreachPage() {
   }
 
   return (
-    <OutreachWorkspace
-      leads={leads}
-      threads={threads}
-      canSend={canWrite(session.role)}
-      mail={{
-        configured: mailConfigured(),
-        sender: senderAddress(),
-        sentToday: newToday,
-        dailyLimit: senderConfig().dailyNew,
-        webmailUrl: webmailUrl(),
-      }}
-      totalSteps={TOTAL_STEPS}
-      autopilot={autopilot}
-      etas={etas}
-      followUpEtas={followUpEtas}
-    />
+    <>
+      <PlanNotice orgId={session.organization.id} feature="autopilot" needsSetup />
+      <OutreachWorkspace
+        leads={leads}
+        threads={threads}
+        canSend={canWrite(session.role)}
+        mail={{
+          configured: Boolean(mailbox),
+          sender: mailbox?.user ?? '',
+          sentToday: newToday,
+          dailyLimit: senderConfig().dailyNew,
+          webmailUrl: webmailUrl(mailbox),
+        }}
+        totalSteps={TOTAL_STEPS}
+        autopilot={autopilot}
+        etas={etas}
+        followUpEtas={followUpEtas}
+      />
+    </>
   )
 }

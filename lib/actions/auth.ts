@@ -58,9 +58,9 @@ const signUpSchema = z.object({
 })
 
 export async function signUp(_prev: AuthState, formData: FormData): Promise<AuthState> {
-  // Private workspace: new people join by invitation, not open sign-up.
-  if (process.env.ALLOW_SIGNUPS !== 'true') {
-    return { error: 'Sign-ups are closed. Ask the workspace owner for an invite.' }
+  // Open sign-up: every new workspace starts on the Free plan. ALLOW_SIGNUPS=false closes it.
+  if (process.env.ALLOW_SIGNUPS === 'false') {
+    return { error: 'Sign-ups are paused right now. Please try again later.' }
   }
 
   const parsed = signUpSchema.safeParse({
@@ -103,7 +103,7 @@ export async function signUp(_prev: AuthState, formData: FormData): Promise<Auth
   }
 
   revalidatePath('/', 'layout')
-  redirect('/dashboard')
+  redirect('/setup')
 }
 
 export async function signOut() {

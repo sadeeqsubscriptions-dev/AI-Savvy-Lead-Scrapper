@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
-import { COMPANY } from '@/lib/outreach/config'
+import { sellerBrief, type Seller } from '@/lib/outreach/seller'
 import type { Database, Lead, LeadAiBrief } from '@/lib/supabase/types'
 import { currentBrief } from './brief-shape'
 import { askClaudeJson, webSearchTool } from './claude'
@@ -8,10 +8,9 @@ import { askClaudeJson, webSearchTool } from './claude'
 /**
  * The lead brief: a short script (who they are, where to hit them, what to
  * offer). The Targeting page shows it, outreach emails are written from it,
- * and the dialer keeps it on screen during calls — one source of truth.
+ * and the dialer keeps it on screen during calls — one source of truth. It
+ * pitches the workspace's own services (its Seller), not anyone else's.
  */
-
-const SERVICE_NAMES = COMPANY.services.map((service) => service.name)
 
 const briefSchema = z.object({
   summary: z.string().min(1),
@@ -22,58 +21,55 @@ const briefSchema = z.object({
   sources: z.array(z.object({ title: z.string(), url: z.string() })),
 })
 
-const jsonSchema = {
-  type: 'object',
-  properties: {
-    summary: { type: 'string', description: '2-3 short lines: who they are and what they do' },
-    pain_points: {
-      type: 'array',
-      items: { type: 'string' },
-      description: '2-3 one-line problems this business likely has that AI Savvy can fix',
-    },
-    offer: {
-      type: 'object',
-      properties: {
-        service: { type: 'string', enum: SERVICE_NAMES },
-        pitch: { type: 'string', description: 'One or two sentences: the concrete outcome for them' },
+function jsonSchema(seller: Seller) {
+  return {
+    type: 'object',
+    properties: {
+      summary: { type: 'string', description: '2-3 short lines: who they are and what they do' },
+      pain_points: {
+        type: 'array',
+        items: { type: 'string' },
+        description: `2-3 one-line problems this business likely has that ${seller.companyName} can fix`,
       },
-      required: ['service', 'pitch'],
-      additionalProperties: false,
-    },
-    opener: { type: 'string', description: 'The first one or two sentences to say on a cold call' },
-    objections: {
-      type: 'array',
-      items: {
+      offer: {
         type: 'object',
-        properties: { objection: { type: 'string' }, response: { type: 'string' } },
-        required: ['objection', 'response'],
+        properties: {
+          service: { type: 'string', enum: seller.services.map((service) => service.name) },
+          pitch: { type: 'string', description: 'One or two sentences: the concrete outcome for them' },
+        },
+        required: ['service', 'pitch'],
         additionalProperties: false,
       },
-      description: '2-3 likely objections with a one-sentence answer each',
-    },
-    sources: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { title: { type: 'string' }, url: { type: 'string' } },
-        required: ['title', 'url'],
-        additionalProperties: false,
+      opener: { type: 'string', description: 'The first one or two sentences to say on a cold call' },
+      objections: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { objection: { type: 'string' }, response: { type: 'string' } },
+          required: ['objection', 'response'],
+          additionalProperties: false,
+        },
+        description: '2-3 likely objections with a one-sentence answer each',
+      },
+      sources: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { title: { type: 'string' }, url: { type: 'string' } },
+          required: ['title', 'url'],
+          additionalProperties: false,
+        },
       },
     },
-  },
-  required: ['summary', 'pain_points', 'offer', 'opener', 'objections', 'sources'],
-  additionalProperties: false,
+    required: ['summary', 'pain_points', 'offer', 'opener', 'objections', 'sources'],
+    additionalProperties: false,
+  }
 }
 
-const SYSTEM = `You prepare short sales scripts for ${COMPANY.name} (${COMPANY.website}).
+function system(seller: Seller) {
+  return `You prepare short sales scripts for ${seller.companyName}.
 
-${COMPANY.name}: ${COMPANY.positioning}
-Founder: ${COMPANY.founder}
-
-Services ${COMPANY.name} sells:
-${COMPANY.services.map((service) => `- ${service.name}: ${service.pitch}`).join('\n')}
-
-The goal of every conversation is a free 15-minute call (${COMPANY.bookingUrl}).
+${sellerBrief(seller)}
 
 Rules:
 - Be concise. A rep reads this seconds before calling. No filler, no generic advice.
@@ -83,6 +79,7 @@ Rules:
 - opener: natural, specific to them, ends with a question. No "how are you today".
 - objections: 2-3, each answered in one sentence.
 - Never invent facts. If research finds little, stay specific to their industry.`
+}
 
 function leadFacts(lead: Lead) {
   return [
@@ -101,16 +98,17 @@ function leadFacts(lead: Lead) {
     .join('\n')
 }
 
-export async function generateBrief(lead: Lead, userId: string | null) {
+export async function generateBrief(lead: Lead, userId: string | null, seller: Seller) {
   const result = await askClaudeJson({
-    system: SYSTEM,
-    prompt: `Research this lead with a few quick web searches (their website first if given), then write the script.
+    system: system(seller),
+    prompt: `Research this lead with a quick web search or two (their website first if given), then write the script.
 
 Lead:
 ${leadFacts(lead)}`,
-    schema: jsonSchema,
+    schema: jsonSchema(seller),
     parse: (value) => briefSchema.safeParse(value),
-    tools: [webSearchTool(3)],
+    tools: [webSearchTool(2)],
+    tier: 'bulk',
     effort: 'low',
     maxTokens: 6000,
   })
@@ -121,11 +119,16 @@ ${leadFacts(lead)}`,
 }
 
 /** Generates and saves the brief when the lead doesn't have a current one. */
-export async function ensureBrief(supabase: SupabaseClient<Database>, lead: Lead, userId: string | null) {
+export async function ensureBrief(
+  supabase: SupabaseClient<Database>,
+  lead: Lead,
+  userId: string | null,
+  seller: Seller,
+) {
   const existing = currentBrief(lead.ai_brief)
   if (existing) return { ok: true as const, brief: existing }
 
-  const result = await generateBrief(lead, userId)
+  const result = await generateBrief(lead, userId, seller)
   if (!result.ok) return result
 
   await supabase

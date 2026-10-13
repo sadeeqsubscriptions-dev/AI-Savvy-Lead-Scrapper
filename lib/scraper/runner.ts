@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { consumeUsage, limitMessage } from '@/lib/billing/entitlements'
 import { publicSectorReason } from '@/lib/outreach/eligibility'
 import type { Database, ScrapeJob } from '@/lib/supabase/types'
 import { getProvider, isProviderReady } from './registry'
@@ -98,6 +99,13 @@ export async function runScrapeJob(supabase: Client, jobId: string): Promise<Run
     }
 
     if (rows.length === 0) return 0
+
+    // Real sources spend the plan's "leads found"; stop cleanly when it runs out.
+    if (job.provider !== 'sample') {
+      const granted = await consumeUsage(job.org_id, 'leads_found', rows.length, { partial: true })
+      if (granted < rows.length) rows.splice(granted)
+      if (granted === 0) throw new ScrapeError(limitMessage('leads_found'))
+    }
 
     const { error } = await supabase.from('scraped_records').insert(rows)
     if (error) throw new ScrapeError(`Could not save results: ${error.message}`)

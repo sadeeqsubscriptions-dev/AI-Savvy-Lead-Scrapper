@@ -4,10 +4,13 @@ import { revalidatePath } from 'next/cache'
 import { currentBrief } from '@/lib/ai/brief-shape'
 import { summarizeCall, writeCallEmail } from '@/lib/ai/call-assist'
 import { canWrite, requireSession } from '@/lib/auth'
+import { limitMessage, requireFeature } from '@/lib/billing/entitlements'
 import { signature } from '@/lib/outreach/compose'
-import { senderConfig } from '@/lib/outreach/config'
-import { replyToThread, startOutreach } from '@/lib/outreach/engine'
-import { calendarInvite, mailConfigured, newMessageId, sendMail } from '@/lib/outreach/mailer'
+import { NO_MAILBOX_ERROR, replyToThread, startOutreach } from '@/lib/outreach/engine'
+import { mailboxFor } from '@/lib/outreach/mailbox'
+import { calendarInvite, newMessageId, sendMail } from '@/lib/outreach/mailer'
+import { NO_PROFILE_ERROR, sellerFor } from '@/lib/outreach/seller'
+import { callerIdFor } from '@/lib/voice/numbers'
 import { withQueue } from '@/lib/outreach/queue-shape'
 import { leadTimezone } from '@/lib/outreach/schedule'
 import { formatPhone, toE164 } from '@/lib/phone'
@@ -29,6 +32,13 @@ export async function startCall(leadId: string, rawNumber: string) {
   if (!canWrite(session.role)) return { ok: false as const, error: 'Viewers cannot place calls.' }
   if (!voiceConfigured()) {
     return { ok: false as const, error: `Calling isn't set up yet. Missing: ${missingVoiceSettings().join(', ')}.` }
+  }
+
+  const allowed = await requireFeature(session.organization.id, 'calling')
+  if (!allowed.ok) return allowed
+  if (allowed.entitlements.remaining.callMinutes < 1) return { ok: false as const, error: limitMessage('call_seconds') }
+  if (!(await callerIdFor(session.organization.id))) {
+    return { ok: false as const, error: 'Your phone number is still being set up. Try again in a minute, or contact support.' }
   }
 
   const to = toE164(rawNumber)
@@ -91,8 +101,9 @@ export async function finishCall(callId: string, durationSeconds: number) {
     wantsEmail: false,
   }
 
-  if (lead && events.length > 0) {
-    const result = await summarizeCall(lead, events)
+  const seller = lead && events.length > 0 ? await sellerFor(call.org_id) : null
+  if (lead && seller && events.length > 0) {
+    const result = await summarizeCall(lead, events, seller)
     if (result.ok) {
       outcome = result.data.outcome
       detected = {
@@ -283,14 +294,17 @@ export async function bookMeeting(
   const length = Math.min(120, Math.max(10, Math.round(minutes)))
 
   const start = new Date(when)
+  const [seller, mailbox] = await Promise.all([sellerFor(lead.org_id), mailboxFor(lead.org_id)])
+  const companyName = seller?.companyName ?? session.organization.name
+  const senderName = seller?.senderName ?? session.profile.full_name ?? session.email
   const { data: meeting, error } = await supabase
     .from('meetings')
     .insert({
       org_id: lead.org_id,
       lead_id: lead.id,
       created_by: session.userId,
-      title: `AI Savvy intro call: ${lead.company ?? lead.full_name}`,
-      description: `Booked on a call by ${senderConfig().name}.`,
+      title: `${companyName} intro call: ${lead.company ?? lead.full_name}`,
+      description: `Booked on a call by ${senderName}.`,
       starts_at: start.toISOString(),
       ends_at: new Date(start.getTime() + length * 60_000).toISOString(),
       attendees: lead.email ? [lead.email] : [],
@@ -302,22 +316,22 @@ export async function bookMeeting(
 
   let invited = false
   let inviteError: string | null = null
-  if (sendInvite && lead.email && mailConfigured()) {
-    const sender = senderConfig()
+  if (sendInvite && lead.email && mailbox) {
     const whenText = inLeadTime(when, lead)
     try {
-      await sendMail({
-        fromName: sender.name,
+      await sendMail(mailbox, {
+        fromName: senderName,
         to: lead.email,
-        subject: `Confirmed: ${length}-minute call with AI Savvy, ${whenText}`,
-        text: `Hi ${lead.full_name.split(' ')[0]},\n\nThanks for your time on the phone. As discussed, here's our ${length}-minute call on ${whenText}. The invite is attached so you can add it to your calendar.\n\nIf that time stops working, just reply and we'll find another.\n${signature()}`,
-        messageId: newMessageId(),
+        subject: `Confirmed: ${length}-minute call with ${companyName}, ${whenText}`,
+        text: `Hi ${lead.full_name.split(' ')[0]},\n\nThanks for your time on the phone. As discussed, here's our ${length}-minute call on ${whenText}. The invite is attached so you can add it to your calendar.\n\nIf that time stops working, just reply and we'll find another.\n${seller ? signature(seller) : ''}`,
+        messageId: newMessageId(mailbox),
         invite: calendarInvite({
-          uid: `${meeting.id}@aisavvy.us`,
+          uid: `${meeting.id}@ai-savvy-crm`,
+          organizer: mailbox.user,
           start,
           minutes: length,
-          title: `AI Savvy x ${lead.company ?? lead.full_name}`,
-          description: `${length}-minute intro call with ${sender.name}, AI Savvy.`,
+          title: `${companyName} x ${lead.company ?? lead.full_name}`,
+          description: `${length}-minute intro call with ${senderName}, ${companyName}.`,
           attendee: { name: lead.full_name, email: lead.email },
         }),
       })
@@ -360,6 +374,10 @@ export async function draftCallEmail(leadId: string, callId: string | null, meet
   const loaded = await loadLeadFor(leadId)
   if (!loaded) return { ok: false as const, error: 'Lead not found.' }
   const { supabase, lead } = loaded
+  const allowed = await requireFeature(lead.org_id, 'ai')
+  if (!allowed.ok) return allowed
+  const seller = await sellerFor(lead.org_id)
+  if (!seller) return { ok: false as const, error: NO_PROFILE_ERROR }
 
   let events: { speaker: 'rep' | 'lead' | null; text: string }[] = []
   if (callId) {
@@ -373,11 +391,15 @@ export async function draftCallEmail(leadId: string, callId: string | null, meet
   }
 
   const when = validTime(meetingTime)
-  const result = await writeCallEmail(lead, currentBrief(lead.ai_brief), events, {
-    meetingTime: when ? inLeadTime(when, lead) : null,
-  })
+  const result = await writeCallEmail(
+    lead,
+    currentBrief(lead.ai_brief),
+    events,
+    { meetingTime: when ? inLeadTime(when, lead) : null },
+    seller,
+  )
   if (!result.ok) return result
-  return { ok: true as const, subject: result.data.subject, body: `${result.data.body.trim()}\n${signature()}` }
+  return { ok: true as const, subject: result.data.subject, body: `${result.data.body.trim()}\n${signature(seller)}` }
 }
 
 /** Sends the after-call email now (in the existing thread if there is one). */
@@ -386,7 +408,7 @@ export async function sendCallEmail(leadId: string, subject: string, body: strin
   if (!loaded) return { ok: false, error: 'Lead not found.' }
   const { session, supabase, lead } = loaded
   if (!lead.email) return { ok: false, error: 'This lead has no email address.' }
-  if (!mailConfigured()) return { ok: false, error: 'Email is not connected.' }
+  if (!(await mailboxFor(lead.org_id))) return { ok: false, error: NO_MAILBOX_ERROR }
   if (subject.trim().length === 0 || body.trim().length < 10) return { ok: false, error: 'Write a subject and a message.' }
 
   const { data: thread } = await supabase
@@ -398,8 +420,9 @@ export async function sendCallEmail(leadId: string, subject: string, body: strin
 
   if (thread) {
     // replyToThread adds the signature itself; drop the one in the draft.
-    const sig = signature().trim()
-    const text = body.trim().endsWith(sig) ? body.trim().slice(0, -sig.length).trim() : body.trim()
+    const seller = await sellerFor(lead.org_id)
+    const sig = seller ? signature(seller).trim() : ''
+    const text = sig && body.trim().endsWith(sig) ? body.trim().slice(0, -sig.length).trim() : body.trim()
     const result = await replyToThread(supabase, { orgId: lead.org_id, threadId: thread.id, userId: session.userId, body: text })
     if (!result.ok) return result
   } else {

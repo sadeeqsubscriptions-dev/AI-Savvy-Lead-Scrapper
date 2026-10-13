@@ -12,6 +12,15 @@ export const CLAUDE_MODEL = 'claude-opus-5-5'
  * current model with thinking off. Everything else uses CLAUDE_MODEL.
  */
 export const CLAUDE_FAST_MODEL = 'claude-haiku-5-5'
+/**
+ * High-volume work billed per lead (research scripts, outreach emails):
+ * strong writing at half the price of CLAUDE_MODEL, which keeps the paid
+ * plans' margins.
+ */
+export const CLAUDE_BULK_MODEL = 'claude-sonnet-5-5'
+
+/** best = CLAUDE_MODEL, bulk = CLAUDE_BULK_MODEL, fast = CLAUDE_FAST_MODEL (no thinking). */
+export type Tier = 'best' | 'bulk' | 'fast'
 
 type Effort = 'low' | 'medium' | 'high'
 
@@ -53,6 +62,7 @@ export async function askClaudeJson<T>({
   effort = 'low',
   maxTokens = 4000,
   fast = false,
+  tier,
 }: {
   system: string
   prompt: string
@@ -65,7 +75,10 @@ export async function askClaudeJson<T>({
   maxTokens?: number
   /** Live, latency-critical answers: CLAUDE_FAST_MODEL, no thinking. */
   fast?: boolean
+  tier?: Tier
 }): Promise<ClaudeJsonResult<T>> {
+  const level: Tier = tier ?? (fast ? 'fast' : 'best')
+  const model = level === 'fast' ? CLAUDE_FAST_MODEL : level === 'bulk' ? CLAUDE_BULK_MODEL : CLAUDE_MODEL
   const key = apiKey()
   if (!key) return { ok: false, error: 'ANTHROPIC_API_KEY is not set in the environment.' }
 
@@ -76,12 +89,12 @@ export async function askClaudeJson<T>({
   try {
     for (let turn = 0; turn < 3; turn++) {
       response = await client.beta.messages.create({
-        model: fast ? CLAUDE_FAST_MODEL : CLAUDE_MODEL,
+        model,
         max_tokens: maxTokens,
         // If a safety classifier declines, the API retries on a fallback model
         // inside the same call instead of failing. (Haiku has no server-side
         // fallback, so the fast path goes without.)
-        ...(fast
+        ...(level === 'fast'
           ? { thinking: { type: 'disabled' as const } }
           : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }),
         tools,

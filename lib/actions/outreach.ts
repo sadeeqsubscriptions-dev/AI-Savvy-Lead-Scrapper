@@ -12,7 +12,9 @@ import {
   startOutreach,
   syncReplies,
 } from '@/lib/outreach/engine'
-import { mailConfigured, testMailConnection } from '@/lib/outreach/mailer'
+import { requireFeature } from '@/lib/billing/entitlements'
+import { mailboxFor } from '@/lib/outreach/mailbox'
+import { testMailConnection } from '@/lib/outreach/mailer'
 import { createClient } from '@/lib/supabase/server'
 
 type SendResult = { ok: true } | { ok: false; error: string }
@@ -60,6 +62,12 @@ export async function sendOutreach(
     reviewed = parsed.data
   }
 
+  // Claude writes it unless the rep wrote it: that needs a plan with AI.
+  if (!reviewed) {
+    const allowed = await requireFeature(session.organization.id, 'ai')
+    if (!allowed.ok) return allowed
+  }
+
   const supabase = await createClient()
   const { data: place } = await supabase
     .from('leads')
@@ -91,24 +99,6 @@ export async function sendOutreach(
   return result.ok ? { ok: true, scheduledFor: null } : result
 }
 
-/** Puts leads in the send queue; the scheduler sends up to the daily target in business hours. */
-export async function scheduleOutreachBatch(leadIds: string[]) {
-  const session = await requireSession()
-  if (!canWrite(session.role)) return { queued: 0, errors: ['Viewers cannot send email.'] }
-
-  const supabase = await createClient()
-  let queued = 0
-  const errors: string[] = []
-  for (const leadId of leadIds.slice(0, 500)) {
-    const result = await queueOutreach(supabase, { orgId: session.organization.id, leadId, by: session.userId })
-    if (result.ok) queued++
-    else errors.push(result.error)
-  }
-
-  refresh()
-  return { queued, errors }
-}
-
 export async function cancelScheduledOutreach(leadId: string): Promise<SendResult> {
   const session = await requireSession()
   if (!canWrite(session.role)) return { ok: false, error: 'Viewers cannot change outreach.' }
@@ -128,7 +118,7 @@ export async function cancelScheduledOutreach(leadId: string): Promise<SendResul
 export async function syncOutreach() {
   const session = await requireSession()
   if (!canWrite(session.role)) return { replies: 0, bounces: 0, errors: [] as string[] }
-  if (!mailConfigured()) return { replies: 0, bounces: 0, errors: ['Email is not connected.'] }
+  if (!(await mailboxFor(session.organization.id))) return { replies: 0, bounces: 0, errors: [] as string[] }
 
   const supabase = await createClient()
   try {
@@ -144,6 +134,10 @@ export async function syncOutreach() {
 export async function setAutopilot(enabled: boolean): Promise<SendResult> {
   const session = await requireSession()
   if (!isAdmin(session.role)) return { ok: false, error: 'Only owners and admins can change the autopilot.' }
+  if (enabled) {
+    const allowed = await requireFeature(session.organization.id, 'autopilot')
+    if (!allowed.ok) return allowed
+  }
 
   const supabase = await createClient()
   const { error } = await supabase
@@ -202,11 +196,12 @@ export async function replyOutreach(threadId: string, body: string): Promise<Sen
 export async function checkEmailConnection() {
   const session = await requireSession()
   if (!canWrite(session.role)) return { ok: false as const, error: 'Viewers cannot change email settings.' }
-  if (!mailConfigured()) {
-    return { ok: false as const, error: 'EMAIL_USER and EMAIL_APP_PASSWORD are not set.' }
+  const mailbox = await mailboxFor(session.organization.id)
+  if (!mailbox) {
+    return { ok: false as const, error: 'No inbox connected yet. Add yours in Settings → Email.' }
   }
 
-  const result = await testMailConnection()
+  const result = await testMailConnection(mailbox)
   const problems = [result.smtp, result.imap].filter((problem): problem is string => Boolean(problem))
   return problems.length === 0
     ? { ok: true as const, message: `Connected: sending via ${result.smtpHost}, reading replies via ${result.imapHost}.` }

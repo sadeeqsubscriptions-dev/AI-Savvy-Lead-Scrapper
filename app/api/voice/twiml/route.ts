@@ -1,5 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { VoiceResponse, callerId, formParams, isTwilioRequest, publicBaseUrl } from '@/lib/voice/twilio'
+import { getEntitlements } from '@/lib/billing/entitlements'
+import { callerIdFor } from '@/lib/voice/numbers'
+import { VoiceResponse, formParams, isTwilioRequest, publicBaseUrl } from '@/lib/voice/twilio'
 
 export const runtime = 'nodejs'
 
@@ -40,6 +42,13 @@ export async function POST(request: Request) {
     .update({ status: 'in_progress', twilio_call_sid: params.CallSid ?? null })
     .eq('id', call.id)
 
+  // Call from the workspace's own number, and never past the minutes it has left.
+  const [fromNumber, entitlements] = await Promise.all([callerIdFor(call.org_id), getEntitlements(call.org_id)])
+  const minutesLeft = entitlements.remaining.callMinutes
+  if (!fromNumber || !entitlements.plan.features.calling || minutesLeft < 1) {
+    return reject('Calling is not available on this workspace right now. Please check your plan.')
+  }
+
   const base = publicBaseUrl(request)
   const response = new VoiceResponse()
 
@@ -59,9 +68,9 @@ export async function POST(request: Request) {
   })
 
   const dial = response.dial({
-    callerId: callerId(),
+    callerId: fromNumber,
     answerOnBridge: true,
-    timeLimit: 60 * 60,
+    timeLimit: Math.max(60, Math.min(60 * 60, minutesLeft * 60)),
     action: `${base}/api/voice/status?callId=${call.id}`,
   })
   dial.number(to)

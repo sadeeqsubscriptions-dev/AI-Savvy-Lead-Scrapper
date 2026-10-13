@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import {
   Activity,
   CalendarDays,
+  CreditCard,
   Crosshair,
   Database,
   FileSearch,
@@ -16,6 +17,7 @@ import {
   Moon,
   Phone,
   Settings,
+  SlidersHorizontal,
   Sun,
   Users,
   X,
@@ -44,7 +46,9 @@ const workspaceNav = [
 ]
 
 const manageNav = [
+  { href: '/setup', label: 'Sales setup', icon: SlidersHorizontal },
   { href: '/team', label: 'Team', icon: Users },
+  { href: '/billing', label: 'Plan & billing', icon: CreditCard },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
@@ -64,7 +68,14 @@ export function AppShell({
   children: React.ReactNode
   user: { id: string; name: string; email: string; role: MemberRole }
   organization: { id: string; name: string }
-  usage: { used: number; quota: number }
+  usage: {
+    plan: string
+    paid: boolean
+    unlimited: boolean
+    aiLeft: number
+    leadsUsed: number
+    leadsCap: number
+  }
 }) {
   const pathname = usePathname()
   const { theme, toggleTheme } = useTheme()
@@ -74,7 +85,7 @@ export function AppShell({
     setOpen(false)
   }, [pathname])
 
-  const percent = usage.quota > 0 ? Math.min(100, (usage.used / usage.quota) * 100) : 0
+  const percent = usage.leadsCap > 0 ? Math.min(100, (usage.leadsUsed / usage.leadsCap) * 100) : 0
 
   const navLink = (
     item: { href: string; label: string; icon: typeof Database },
@@ -147,16 +158,28 @@ export function AppShell({
         </nav>
 
         <div className="mt-auto space-y-3 pt-6">
-          <div className="rounded-xl border border-sidebar-border bg-card/60 p-3">
+          <Link
+            href="/billing"
+            className="block rounded-xl border border-sidebar-border bg-card/60 p-3 transition-colors hover:bg-card"
+          >
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">Lead quota</span>
-              <span className="font-mono text-xs">{Math.round(percent)}%</span>
+              <span className="text-xs text-muted-foreground">{usage.plan} plan</span>
+              <span className="font-mono text-xs">{usage.unlimited ? 'Unlimited' : `${Math.round(percent)}%`}</span>
             </div>
-            <Progress value={percent} />
+            <Progress value={usage.unlimited ? 0 : percent} />
             <p className="mt-2 text-[11px] text-muted-foreground">
-              {formatNumber(usage.used)} of {formatNumber(usage.quota)} leads
+              {usage.unlimited
+                ? 'Owner workspace, never billed'
+                : usage.paid
+                  ? `${formatNumber(usage.leadsUsed)} of ${formatNumber(usage.leadsCap)} leads found · ${formatNumber(usage.aiLeft)} AI leads left`
+                  : `${formatNumber(usage.leadsUsed)} of ${formatNumber(usage.leadsCap)} leads stored`}
             </p>
-          </div>
+            {!usage.paid && !usage.unlimited ? (
+              <span className="mt-2 block rounded-md bg-gradient-brand px-2 py-1.5 text-center text-xs font-medium text-white">
+                Upgrade for AI, scraping &amp; calling
+              </span>
+            ) : null}
+          </Link>
 
           <div className="flex items-center gap-3 rounded-xl border border-transparent px-1 py-1.5">
             <Avatar name={user.name} />
