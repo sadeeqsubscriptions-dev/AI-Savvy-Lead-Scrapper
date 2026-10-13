@@ -24,6 +24,8 @@ export function ScrapeForm({
   const [providerId, setProviderId] = useState(
     providers.find((provider) => provider.ready)?.id ?? providers[0]?.id ?? 'sample',
   )
+  // Most people never need to pick a source: Smart search is the default.
+  const [chooseSource, setChooseSource] = useState(false)
   const [minScore, setMinScore] = useState(0)
   // Off by default: results go to review so you pick what enters the CRM.
   const [autoImport, setAutoImport] = useState(false)
@@ -48,25 +50,43 @@ export function ScrapeForm({
       <form action={formAction} className="space-y-4 px-5 pb-5">
         <FormAlert error={state.error} />
 
-        <Field label="Data source" htmlFor="provider">
-          <Select
-            id="provider"
-            name="provider"
-            value={providerId}
-            onChange={(event) => setProviderId(event.target.value)}
-          >
-            {providers.map((item) => (
-              <option key={item.id} value={item.id} disabled={!item.ready}>
-                {item.label}
-                {item.ready ? '' : ' — not configured'}
-              </option>
-            ))}
-          </Select>
-        </Field>
-
-        {provider ? (
-          <p className="-mt-2 text-xs leading-5 text-muted-foreground">{provider.description}</p>
-        ) : null}
+        {chooseSource ? (
+          <>
+            <Field label="Data source" htmlFor="provider">
+              <Select
+                id="provider"
+                name="provider"
+                value={providerId}
+                onChange={(event) => setProviderId(event.target.value)}
+              >
+                {providers.map((item) => (
+                  <option key={item.id} value={item.id} disabled={!item.ready}>
+                    {item.label}
+                    {item.ready ? '' : ' — not configured'}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {provider ? (
+              <p className="-mt-2 text-xs leading-5 text-muted-foreground">{provider.description}</p>
+            ) : null}
+          </>
+        ) : (
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-primary/25 bg-primary/[0.05] p-3">
+            <input type="hidden" name="provider" value={providerId} />
+            <div className="text-xs leading-5">
+              <p className="font-medium text-foreground">{provider?.label ?? 'Smart search'}</p>
+              <p className="text-muted-foreground">{provider?.description}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setChooseSource(true)}
+              className="shrink-0 text-xs text-primary hover:underline"
+            >
+              Change source
+            </button>
+          </div>
+        )}
 
         {provider && !provider.ready ? (
           <div className="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs leading-5 text-warning">
@@ -83,14 +103,14 @@ export function ScrapeForm({
           label="What are you looking for?"
           htmlFor="query"
           error={state.fieldErrors?.query}
-          hint="A niche, job title, or business category."
+          hint="The kind of business, the way you'd search for it on Google Maps."
         >
           <Input
             id="query"
             name="query"
             required
             minLength={2}
-            placeholder="Marketing agencies"
+            placeholder="Dentists, roofing companies, med spas…"
           />
         </Field>
 
@@ -104,7 +124,7 @@ export function ScrapeForm({
             name="locations"
             rows={3}
             className="min-h-20"
-            placeholder={'Austin, TX\nNew York, NY'}
+            placeholder={'Miami, FL\nOrlando, FL'}
           />
         </Field>
 

@@ -6,12 +6,13 @@ import { firecrawlProvider } from './providers/firecrawl'
 import { googleMapsProvider } from './providers/google-maps'
 import { serpapiProvider } from './providers/serpapi'
 import { sampleProvider } from './providers/sample'
+import { smartProvider, smartSearchReady } from './providers/smart'
 import { CUSTOM_PROVIDER_READY, customProvider } from './providers/custom'
 import type { ScrapeProvider } from './types'
 
 // Ordered roughly by how useful each one is as a starting point.
 const providers: ScrapeProvider[] = [
-  sampleProvider,
+  smartProvider,
   firecrawlProvider,
   serpapiProvider,
   apolloProvider,
@@ -20,9 +21,10 @@ const providers: ScrapeProvider[] = [
   crawl4aiProvider,
   browserUseProvider,
   customProvider,
+  sampleProvider,
 ]
 
-export const DEFAULT_PROVIDER = sampleProvider.id
+export const DEFAULT_PROVIDER = smartProvider.id
 
 /** Providers that crawl supplied pages instead of searching the web. */
 export const SEED_URL_PROVIDERS = new Set([crawleeProvider.id, crawl4aiProvider.id])
@@ -37,6 +39,7 @@ export function getProvider(id: string): ScrapeProvider | null {
 /** True when the provider's credentials (or implementation) are in place. */
 export function isProviderReady(provider: ScrapeProvider) {
   if (provider.id === customProvider.id) return CUSTOM_PROVIDER_READY
+  if (provider.id === smartProvider.id) return smartSearchReady()
   if (!provider.requiresEnv) return true
   return Boolean(process.env[provider.requiresEnv])
 }
