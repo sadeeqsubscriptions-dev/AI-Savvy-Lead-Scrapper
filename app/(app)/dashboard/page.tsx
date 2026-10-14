@@ -19,8 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardHeader, EmptyState } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { requireSession } from '@/lib/auth'
-import { senderConfig } from '@/lib/outreach/config'
-import { autopilotCandidates, sentToday } from '@/lib/outreach/engine'
+import { autopilotCandidates, dailyPlan, sentToday } from '@/lib/outreach/engine'
 import { createClient } from '@/lib/supabase/server'
 import { LEAD_STATUSES } from '@/lib/constants'
 import { formatCurrency, formatDelta, formatNumber, formatPercent, formatRelative, formatTime, greetingFor } from '@/lib/format'
@@ -42,7 +41,7 @@ export default async function DashboardPage() {
   const supabase = await createClient()
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  const [metrics, trend, activity, team, meetings, statusCounts, replyRows, scheduledRows, newToday, upNext] = await Promise.all([
+  const [metrics, trend, activity, team, meetings, statusCounts, replyRows, scheduledRows, newToday, upNext, pace] = await Promise.all([
     getDashboardMetrics(orgId),
     getLeadTrend(orgId, 30),
     getRecentActivity(orgId, 6),
@@ -64,6 +63,7 @@ export default async function DashboardPage() {
       .not('metadata->outreach_queue', 'is', null),
     sentToday(supabase, orgId, true),
     autopilotCandidates(supabase, orgId),
+    dailyPlan(supabase, orgId),
   ])
 
   type ReplyRow = {
@@ -157,7 +157,7 @@ export default async function DashboardPage() {
         replies={replies}
         scheduled={(scheduledRows.count ?? 0) + upNext.length}
         sentToday={newToday}
-        dailyTarget={senderConfig().dailyNew}
+        dailyTarget={pace.dailyNew}
       />
 
       {metrics.total_leads === 0 ? (
@@ -165,17 +165,14 @@ export default async function DashboardPage() {
           <EmptyState
             icon={Sparkles}
             title="Your workspace is ready — now fill the pipeline"
-            description="Run a scrape to discover accounts, add a lead by hand, or load a sample dataset from Settings to explore the app with realistic data."
+            description="Find businesses with the lead scraper, import your list from Excel, or add a lead by hand."
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 <Link href="/scraper">
                   <Button variant="brand">Run your first scrape</Button>
                 </Link>
                 <Link href="/crm">
-                  <Button variant="outline">Add a lead manually</Button>
-                </Link>
-                <Link href="/settings?tab=workspace">
-                  <Button variant="ghost">Load sample data</Button>
+                  <Button variant="outline">Import or add leads</Button>
                 </Link>
               </div>
             }
@@ -205,7 +202,7 @@ export default async function DashboardPage() {
         })}
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.55fr_1fr] animate-in fade-in slide-in-from-bottom-3 duration-500 [animation-delay:150ms] [animation-fill-mode:backwards]">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] animate-in fade-in slide-in-from-bottom-3 duration-500 [animation-delay:150ms] [animation-fill-mode:backwards]">
         <Card className="hover-lift">
           <CardHeader
             title="Pipeline performance"

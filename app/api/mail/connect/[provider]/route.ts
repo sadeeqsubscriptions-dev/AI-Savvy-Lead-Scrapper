@@ -8,7 +8,8 @@ const STATE_COOKIE = 'mail_oauth_state'
 /** Sends the workspace admin to Google / Microsoft to approve sending from their inbox. */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ provider: string }> }) {
   const { provider } = await params
-  const back = new URL('/setup', request.url)
+  const from = request.nextUrl.searchParams.get('from') === 'integrations' ? 'integrations' : 'setup'
+  const back = new URL(from === 'integrations' ? '/settings?tab=integrations' : '/setup', request.url)
 
   if (!isOAuthProvider(provider) || !oauthConfigured(provider)) {
     back.searchParams.set('mail_error', 'That sign-in option is not available yet. Use an app password instead.')
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const hint = request.nextUrl.searchParams.get('email') ?? undefined
   const response = NextResponse.redirect(authorizeUrl(provider, state, hint))
   // Tied to this browser and workspace; checked on the way back.
-  response.cookies.set(STATE_COOKIE, `${state}.${session.organization.id}.${provider}`, {
+  response.cookies.set(STATE_COOKIE, `${state}.${session.organization.id}.${provider}.${from}`, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',

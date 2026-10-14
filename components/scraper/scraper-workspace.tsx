@@ -65,7 +65,7 @@ export function ScraperWorkspace({
         }
       />
 
-      <div className="grid gap-5 xl:grid-cols-[0.95fr_1.35fr]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
         <div className="space-y-5">
           {canWrite ? (
             <ScrapeForm providers={providers} onStarted={setActiveJobId} />

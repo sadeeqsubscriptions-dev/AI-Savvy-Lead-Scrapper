@@ -21,6 +21,7 @@ import {
   checkEmailConnection,
   sendOutreach,
   setAutopilot,
+  setDailyNew,
   syncOutreach,
 } from '@/lib/actions/outreach'
 import type { DraftEmail } from '@/lib/outreach/compose'
@@ -225,11 +226,14 @@ export function OutreachWorkspace({
         <Card className="flex items-start gap-3 border-warning/40 bg-warning/[0.06] p-4">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
           <div className="text-sm">
-            <p className="font-medium">Connect a mailbox to start sending</p>
+            <p className="font-medium">Connect your inbox to start sending</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Set <code className="font-mono">EMAIL_USER</code> and <code className="font-mono">EMAIL_APP_PASSWORD</code>{' '}
-              (an app-specific password from your Zoho account) in your environment, then redeploy. Emails go out from
-              that address and replies are read from its inbox.
+              Emails go out from your own address and replies are read from its inbox. Connect Gmail, Outlook, Zoho or
+              any other mailbox on{' '}
+              <a href="/settings?tab=integrations" className="font-medium text-primary hover:underline">
+                Settings → Integrations
+              </a>
+              .
             </p>
           </div>
         </Card>
@@ -272,9 +276,12 @@ export function OutreachWorkspace({
           </p>
         </div>
         {canSend && autopilot.ready ? (
-          <Button variant={autopilot.enabled ? 'outline' : 'brand'} size="sm" onClick={toggleAutopilot} disabled={switching}>
-            {autopilot.enabled ? 'Pause autopilot' : 'Turn autopilot on'}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <DailyPace value={mail.dailyLimit} />
+            <Button variant={autopilot.enabled ? 'outline' : 'brand'} size="sm" onClick={toggleAutopilot} disabled={switching}>
+              {autopilot.enabled ? 'Pause autopilot' : 'Turn autopilot on'}
+            </Button>
+          </div>
         ) : null}
       </Card>
 
@@ -322,7 +329,7 @@ export function OutreachWorkspace({
                 tab === 'scheduled'
                   ? 'Every eligible lead has been emailed. Scrape or import more leads and the autopilot picks them up.'
                   : tab === 'ready'
-                  ? 'Demo leads (and everyone, while the autopilot is paused) wait here for you to email them by hand.'
+                  ? 'While the autopilot is paused, leads wait here for you to email them by hand.'
                     : 'Government offices, article titles and department inboxes land here instead of getting emailed.'
               }
             />
@@ -339,7 +346,7 @@ export function OutreachWorkspace({
                 </li>
               ) : tab === 'ready' ? (
                 <li className="bg-secondary/30 px-4 py-2.5 text-xs text-muted-foreground">
-                  The autopilot skips these (sample data{autopilot.enabled ? '' : ', or the autopilot is paused'}). Open one to write and send by hand.
+                  The autopilot skips these{autopilot.enabled ? '' : ' while it is paused'}. Open one to write and send by hand.
                 </li>
               ) : null}
               {leadRows.map((lead) => (
@@ -485,5 +492,53 @@ export function OutreachWorkspace({
         onClose={() => setPreviewLeadId(null)}
       />
     </div>
+  )
+}
+
+/** "Emails per day" stepper: how many new leads the autopilot starts each weekday. */
+function DailyPace({ value }: { value: number }) {
+  const router = useRouter()
+  const [draft, setDraft] = useState(String(value))
+  const [saving, startSaving] = useTransition()
+  useEffect(() => setDraft(String(value)), [value])
+  const dirty = Number(draft) !== value
+
+  const save = () =>
+    startSaving(async () => {
+      const result = await setDailyNew(Number(draft))
+      if (!result.ok) {
+        toast.error(result.error)
+        setDraft(String(value))
+      } else {
+        toast.success(`Autopilot will email up to ${Number(draft)} new leads a day.`)
+        router.refresh()
+      }
+    })
+
+  return (
+    <form
+      className="flex items-center gap-1.5 rounded-lg border border-border bg-background/60 py-1 pl-3 pr-1"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (dirty) save()
+      }}
+    >
+      <label htmlFor="daily-new" className="whitespace-nowrap text-xs text-muted-foreground">
+        New leads / day
+      </label>
+      <input
+        id="daily-new"
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={100}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        className="h-7 w-14 rounded-md border border-border bg-card px-2 text-center font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+      />
+      <Button type="submit" size="sm" variant={dirty ? 'brand' : 'ghost'} disabled={!dirty || saving} className="h-7 px-2.5">
+        {saving ? <Spinner className="size-3.5" /> : 'Save'}
+      </Button>
+    </form>
   )
 }

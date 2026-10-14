@@ -168,11 +168,14 @@ export function MailboxForm({
   oauth,
   notice,
   fallback = false,
+  returnTo = 'setup',
 }: {
   mailbox: ConnectedMailbox
   canEdit: boolean
   /** The team workspace sends from the company inbox when none is connected. */
   fallback?: boolean
+  /** Where the Google / Microsoft sign-in comes back to. */
+  returnTo?: 'setup' | 'integrations'
   oauth: OAuthOptions
   notice: { connected?: string; error?: string }
 }) {
@@ -192,8 +195,10 @@ export function MailboxForm({
   useEffect(() => {
     if (notice.connected) toast.success(`Connected ${notice.connected}. Emails will be sent from this inbox.`)
     if (notice.error) toast.error(notice.error)
-    if (notice.connected || notice.error) window.history.replaceState(null, '', '/setup')
-  }, [notice.connected, notice.error])
+    if (notice.connected || notice.error) {
+      window.history.replaceState(null, '', returnTo === 'integrations' ? '/settings?tab=integrations' : '/setup')
+    }
+  }, [notice.connected, notice.error, returnTo])
 
   const onEmail = (value: string) => {
     setEmail(value)
@@ -212,7 +217,7 @@ export function MailboxForm({
     })
 
   const signInHref = (which: 'google' | 'microsoft') =>
-    `/api/mail/connect/${which}${email.includes('@') ? `?email=${encodeURIComponent(email)}` : ''}`
+    `/api/mail/connect/${which}?from=${returnTo}${email.includes('@') ? `&email=${encodeURIComponent(email)}` : ''}`
   const anyOAuth = oauth.google || oauth.microsoft
 
   return (

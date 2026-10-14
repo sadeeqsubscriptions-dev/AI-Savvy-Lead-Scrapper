@@ -22,7 +22,7 @@ export function ScrapeForm({
   const router = useRouter()
   const [state, formAction] = useActionState<CreateJobState, FormData>(createScrapeJob, {})
   const [providerId, setProviderId] = useState(
-    providers.find((provider) => provider.ready)?.id ?? providers[0]?.id ?? 'sample',
+    providers.find((provider) => provider.ready)?.id ?? providers[0]?.id ?? 'smart',
   )
   // Most people never need to pick a source: Smart search is the default.
   const [chooseSource, setChooseSource] = useState(false)

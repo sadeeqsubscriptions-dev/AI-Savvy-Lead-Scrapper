@@ -6,7 +6,6 @@ import { crawleeProvider } from './providers/crawlee'
 import { firecrawlProvider } from './providers/firecrawl'
 import { googleMapsProvider } from './providers/google-maps'
 import { serpapiProvider } from './providers/serpapi'
-import { sampleProvider } from './providers/sample'
 import { smartProvider, smartSearchReady } from './providers/smart'
 import { CUSTOM_PROVIDER_READY, customProvider } from './providers/custom'
 import type { ScrapeProvider } from './types'
@@ -23,7 +22,6 @@ const providers: ScrapeProvider[] = [
   crawl4aiProvider,
   browserUseProvider,
   customProvider,
-  sampleProvider,
 ]
 
 export const DEFAULT_PROVIDER = smartProvider.id

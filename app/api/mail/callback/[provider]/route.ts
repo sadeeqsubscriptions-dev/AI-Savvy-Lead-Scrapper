@@ -19,7 +19,9 @@ function same(a: string, b: string) {
 /** Google / Microsoft send the admin back here after they approve access. */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ provider: string }> }) {
   const { provider } = await params
-  const back = new URL('/setup', request.url)
+  // Back to the page the sign-in started from (Sales setup or Settings → Integrations).
+  const from = (request.cookies.get(STATE_COOKIE)?.value ?? '').split('.')[3]
+  const back = new URL(from === 'integrations' ? '/settings?tab=integrations' : '/setup', request.url)
   const fail = (message: string) => {
     back.searchParams.set('mail_error', message)
     const response = NextResponse.redirect(back)

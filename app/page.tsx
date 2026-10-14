@@ -21,6 +21,7 @@ import { Logo } from '@/components/brand'
 import { LiveDemo } from '@/components/landing/live-demo'
 import { CountUp, Reveal, RotatingWord, SpotlightGroup } from '@/components/landing/motion'
 import { Pricing } from '@/components/landing/pricing'
+import { SiteFooter } from '@/components/landing/site-footer'
 import { getSession } from '@/lib/auth'
 import { PLANS, TOP_UPS } from '@/lib/billing/plans'
 import { APP_NAME } from '@/lib/constants'
@@ -164,7 +165,7 @@ export default async function Home() {
   const primaryHref = session ? '/dashboard' : '/signup'
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-background text-foreground">
+    <div id="top" className="min-h-screen overflow-x-hidden bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/75 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
           <Logo href="/" />
@@ -279,20 +280,31 @@ export default async function Home() {
 
         {/* Numbers */}
         <section className="border-b border-border">
-          <div className="mx-auto grid max-w-6xl grid-cols-2 gap-6 px-4 py-14 sm:px-6 lg:grid-cols-4">
-            {[
-              { value: PLANS.pro.limits.leadsFound, suffix: '', label: 'leads a month you can find on Pro' },
-              { value: TOTAL_STEPS, suffix: '', label: 'personal emails per lead, follow-ups included' },
-              { value: 5, suffix: ' days', label: 'a week of sending, in each lead’s business hours' },
-              { value: 0, suffix: ' templates', label: 'every email is written for one business', static: true },
-            ].map((stat, index) => (
-              <Reveal key={stat.label} delay={index * 90} className="text-center lg:text-left">
-                <p className="font-display text-4xl font-bold tracking-tight text-gradient-brand sm:text-5xl">
-                  {stat.static ? `0${stat.suffix}` : <CountUp value={stat.value} suffix={stat.suffix} />}
-                </p>
-                <p className="mt-2 text-sm text-muted-foreground">{stat.label}</p>
-              </Reveal>
-            ))}
+          <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
+            {/* 1px gaps over a border-coloured background draw the dividers at every breakpoint. */}
+            <div className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                { icon: MapPin, value: PLANS.pro.limits.leadsFound, unit: 'leads / mo', label: 'Fresh businesses you can find every month on Pro' },
+                { icon: Mail, value: TOTAL_STEPS, unit: 'emails / lead', label: `A personal first email plus ${TOTAL_STEPS - 1} follow-ups, sent for you` },
+                { icon: Clock, value: 5, unit: 'days / week', label: 'Sent in each lead’s own business hours, never on weekends' },
+                { icon: Sparkles, value: 100, unit: '% personal', label: 'Every email is written for one business. No templates.' },
+              ].map((stat, index) => (
+                <Reveal key={stat.label} delay={index * 90} className="h-full bg-card">
+                  <div className="flex h-full flex-col gap-3 p-6 sm:p-7">
+                    <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <stat.icon className="size-4" />
+                    </span>
+                    <p className="flex items-baseline gap-2 whitespace-nowrap">
+                      <span className="font-display text-4xl font-bold leading-none tracking-tight text-gradient-brand sm:text-[2.75rem]">
+                        <CountUp value={stat.value} />
+                      </span>
+                      <span className="text-sm font-medium text-muted-foreground">{stat.unit}</span>
+                    </p>
+                    <p className="text-sm leading-6 text-muted-foreground">{stat.label}</p>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
           </div>
         </section>
 
@@ -458,19 +470,7 @@ export default async function Home() {
         </section>
       </main>
 
-      <footer className="border-t border-border pb-20 sm:pb-0">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:px-6">
-          <span>
-            © {new Date().getFullYear()} {APP_NAME} by{' '}
-            <a href="https://aisavvy.us" className="hover:text-foreground">AI Savvy</a>
-          </span>
-          <div className="flex gap-5">
-            <a href="#pricing" className="hover:text-foreground">Pricing</a>
-            <a href="#faq" className="hover:text-foreground">FAQ</a>
-            <Link href="/login" className="hover:text-foreground">Sign in</Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
 
       {/* Mobile: keep the main action in reach */}
       {!session ? (

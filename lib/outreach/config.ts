@@ -57,6 +57,16 @@ export const FOLLOW_UP_DELAYS_DAYS = [3, 5]
 
 export const TOTAL_STEPS = FOLLOW_UP_DELAYS_DAYS.length + 1
 
+/** Bounds for the per-workspace "new leads per day" setting. */
+export const DAILY_NEW_MIN = 1
+export const DAILY_NEW_MAX = 100
+
+export function clampDailyNew(value: number | null | undefined) {
+  const fallback = Number(process.env.OUTREACH_DAILY_NEW) || 25
+  const n = Number.isFinite(value) && value ? Math.round(value) : fallback
+  return Math.min(DAILY_NEW_MAX, Math.max(DAILY_NEW_MIN, n))
+}
+
 export function senderConfig() {
   return {
     name: process.env.OUTREACH_SENDER_NAME || 'The AI Savvy team',

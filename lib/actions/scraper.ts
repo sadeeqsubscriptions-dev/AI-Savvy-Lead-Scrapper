@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { canWrite, requireSession } from '@/lib/auth'
 import { limitMessage, requireFeature, storedLeadsMessage, storedLeadsRoom } from '@/lib/billing/entitlements'
 import { createClient } from '@/lib/supabase/server'
-import { SEED_URL_PROVIDERS, getProvider, isProviderReady } from '@/lib/scraper/registry'
+import { DEFAULT_PROVIDER, SEED_URL_PROVIDERS, getProvider, isProviderReady } from '@/lib/scraper/registry'
 import { collectSeeds } from '@/lib/scraper/seeds'
 import { failure, optionalText, type ActionState } from '@/lib/actions/state'
 
@@ -41,7 +41,7 @@ export async function createScrapeJob(
 
   const parsed = jobSchema.safeParse({
     name: formData.get('name') ?? undefined,
-    provider: formData.get('provider') ?? 'sample',
+    provider: formData.get('provider') ?? DEFAULT_PROVIDER,
     query: formData.get('query') ?? '',
     locations: formData.get('locations') ?? '',
     seed_urls: formData.get('seed_urls') ?? '',
@@ -64,15 +64,13 @@ export async function createScrapeJob(
     }
   }
 
-  // Sample data is free for everyone; real sources are a paid feature and
-  // a job can never ask for more leads than the plan has left this month.
-  if (provider.id !== 'sample') {
-    const allowed = await requireFeature(session.organization.id, 'scraping')
-    if (!allowed.ok) return { error: allowed.error }
-    const left = allowed.entitlements.remaining.leadsFound
-    if (left < 1) return { error: limitMessage('leads_found') }
-    parsed.data.max_results = Math.min(parsed.data.max_results, left)
-  }
+  // Scraping is a paid feature, and a job can never ask for more leads than
+  // the plan has left this month.
+  const allowed = await requireFeature(session.organization.id, 'scraping')
+  if (!allowed.ok) return { error: allowed.error }
+  const left = allowed.entitlements.remaining.leadsFound
+  if (left < 1) return { error: limitMessage('leads_found') }
+  parsed.data.max_results = Math.min(parsed.data.max_results, left)
 
   const { name, locations, seed_urls: seedInput, ...rest } = parsed.data
 

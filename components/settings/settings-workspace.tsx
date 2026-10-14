@@ -4,16 +4,18 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useActionState, useEffect, useState, useTransition } from 'react'
 import {
+  ArrowRight,
   Building2,
   Database,
   KeyRound,
+  Phone,
   Plug,
   ShieldCheck,
+  Store,
   UserRound,
 } from 'lucide-react'
 import {
   changePassword,
-  loadDemoData,
   resetWorkspaceData,
   updateOrganization,
   updateProfile,
@@ -21,9 +23,10 @@ import {
 import { signOut } from '@/lib/actions/auth'
 import type { ActionState } from '@/lib/actions/state'
 import type { ProviderOption } from '@/lib/scraper/registry'
-import { formatDate, formatNumber } from '@/lib/format'
+import { formatDate, formatNumber, formatPhone } from '@/lib/format'
 import type { MemberRole, Organization, Profile } from '@/lib/supabase/types'
 import { FormAlert } from '@/components/auth/form-alert'
+import { MailboxForm, type ConnectedMailbox, type OAuthOptions } from '@/components/setup/setup-forms'
 import { SubmitButton } from '@/components/auth/submit-button'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -42,6 +45,18 @@ const TABS = [
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
+
+/** What this workspace has connected, for Settings → Integrations. */
+export type WorkspaceIntegrations = {
+  mailbox: ConnectedMailbox
+  fallbackSender: string | null
+  oauth: OAuthOptions
+  phoneNumber: string | null
+  planName: string
+  callingIncluded: boolean
+  salesProfile: { companyName: string; services: number } | null
+  internal: boolean
+}
 
 const TIMEZONES = [
   'UTC',
@@ -66,6 +81,7 @@ export function SettingsWorkspace({
   leadCount,
   memberCount,
   providers,
+  integrations,
   isAdmin,
 }: {
   profile: Profile
@@ -75,6 +91,7 @@ export function SettingsWorkspace({
   leadCount: number
   memberCount: number
   providers: ProviderOption[]
+  integrations: WorkspaceIntegrations
   isAdmin: boolean
 }) {
   const router = useRouter()
@@ -94,7 +111,7 @@ export function SettingsWorkspace({
       <SectionHeading
         eyebrow="Configuration"
         title="Settings"
-        description="Manage your profile, workspace, and connected data sources."
+        description="Manage your profile, workspace, connected inbox and calling number."
       />
 
       <div className="flex gap-2 overflow-x-auto border-b border-border pb-px">
@@ -131,7 +148,9 @@ export function SettingsWorkspace({
           memberCount={memberCount}
         />
       ) : null}
-      {tab === 'integrations' ? <IntegrationsPanel providers={providers} /> : null}
+      {tab === 'integrations' ? (
+        <IntegrationsPanel providers={providers} integrations={integrations} isAdmin={isAdmin} />
+      ) : null}
       {tab === 'data' ? (
         <DataPanel isAdmin={isAdmin} leadCount={leadCount} organization={organization} />
       ) : null}
@@ -388,37 +407,143 @@ function WorkspacePanel({
   )
 }
 
-function IntegrationsPanel({ providers }: { providers: ProviderOption[] }) {
+function IntegrationsPanel({
+  providers,
+  integrations,
+  isAdmin,
+}: {
+  providers: ProviderOption[]
+  integrations: WorkspaceIntegrations
+  isAdmin: boolean
+}) {
+  const searchParams = useSearchParams()
+  const notice = {
+    connected: searchParams.get('mail_connected') ?? undefined,
+    error: searchParams.get('mail_error') ?? undefined,
+  }
+  const sender = integrations.mailbox?.email ?? integrations.fallbackSender
+
   return (
-    <Card>
-      <CardHeader
-        title="Scraper data sources"
-        description="Providers are registered in lib/scraper/registry.ts and enabled by setting their environment variable."
+    <div className="space-y-5">
+      <div className="rounded-xl border border-primary/25 bg-primary/[0.05] p-4 text-sm">
+        <p className="font-medium">How your connections are used</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          {sender ? (
+            <>
+              Every email — autopilot, follow-ups, replies and call follow-ups — is sent from{' '}
+              <span className="font-mono text-foreground">{sender}</span>, and replies are read from its inbox.
+            </>
+          ) : (
+            'Connect an inbox below: every email the autopilot sends goes out from it, and replies are read from it.'
+          )}{' '}
+          {integrations.phoneNumber
+            ? `Calls show ${formatPhone(integrations.phoneNumber)} as caller ID.`
+            : null}
+        </p>
+      </div>
+
+      <MailboxForm
+        mailbox={integrations.mailbox}
+        canEdit={isAdmin}
+        oauth={integrations.oauth}
+        notice={notice}
+        fallback={Boolean(integrations.fallbackSender)}
+        returnTo="integrations"
       />
-      <ul className="divide-y divide-border">
-        {providers.map((provider) => (
-          <li key={provider.id} className="flex items-start gap-4 px-5 py-4">
-            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
-              <Plug className="size-4" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-medium">{provider.label}</p>
-                <Badge tone={provider.ready ? 'success' : 'outline'}>
-                  {provider.ready ? 'Ready' : 'Not configured'}
-                </Badge>
-              </div>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{provider.description}</p>
-              {provider.requiresEnv ? (
-                <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
-                  {provider.requiresEnv}
-                </p>
-              ) : null}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </Card>
+
+      <div className="grid gap-5 md:grid-cols-2">
+        <Card>
+          <CardHeader
+            title={
+              <span className="flex items-center gap-2">
+                <Phone className="size-4 text-primary" /> Calling number
+              </span>
+            }
+            description="The number leads see when you call from the Dialer."
+            action={
+              integrations.phoneNumber ? (
+                <Badge tone="success">Active</Badge>
+              ) : integrations.callingIncluded ? (
+                <Badge tone="warning">Setting up</Badge>
+              ) : (
+                <Badge tone="outline">Not on {integrations.planName}</Badge>
+              )
+            }
+          />
+          <div className="px-5 pb-5">
+            {integrations.phoneNumber ? (
+              <p className="font-mono text-xl font-semibold tracking-tight">{formatPhone(integrations.phoneNumber)}</p>
+            ) : integrations.callingIncluded ? (
+              <p className="text-sm text-muted-foreground">Your number is being assigned. It appears here within a minute.</p>
+            ) : (
+              <Link href="/billing" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                Get your own number with Growth <ArrowRight className="size-4" />
+              </Link>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title={
+              <span className="flex items-center gap-2">
+                <Store className="size-4 text-primary" /> Sales profile
+              </span>
+            }
+            description="What the AI pitches in every email and call."
+            action={
+              integrations.salesProfile ? (
+                <Badge tone="success">Done</Badge>
+              ) : integrations.internal ? (
+                <Badge tone="info">AI Savvy defaults</Badge>
+              ) : (
+                <Badge tone="warning">Needed</Badge>
+              )
+            }
+          />
+          <div className="px-5 pb-5">
+            <p className="text-sm">
+              {integrations.salesProfile
+                ? `${integrations.salesProfile.companyName} · ${integrations.salesProfile.services} service${integrations.salesProfile.services === 1 ? '' : 's'}`
+                : integrations.internal
+                  ? 'Pitching AI Savvy services.'
+                  : 'Not filled in yet.'}
+            </p>
+            <Link href="/setup" className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+              Edit on Sales setup <ArrowRight className="size-4" />
+            </Link>
+          </div>
+        </Card>
+      </div>
+
+      {providers.length > 0 ? (
+        <Card>
+          <CardHeader
+            title="Lead data sources"
+            description="Team workspace only. Customers just use Smart search; these are the services behind it."
+          />
+          <ul className="divide-y divide-border">
+            {providers.map((provider) => (
+              <li key={provider.id} className="flex items-start gap-4 px-5 py-4">
+                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+                  <Plug className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium">{provider.label}</p>
+                    <Badge tone={provider.ready ? 'success' : 'outline'}>{provider.ready ? 'Ready' : 'Not configured'}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{provider.description}</p>
+                  {provider.requiresEnv ? (
+                    <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">{provider.requiresEnv}</p>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+    </div>
   )
 }
 
@@ -433,11 +558,9 @@ function DataPanel({
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  const [action, setAction] = useState<'seed' | 'reset' | null>(null)
 
-  const run = (which: 'seed' | 'reset') => {
+  const reset = () => {
     if (
-      which === 'reset' &&
       !window.confirm(
         `Delete every lead, meeting, and scrape in ${organization.name}? This cannot be undone.`,
       )
@@ -445,45 +568,18 @@ function DataPanel({
       return
     }
 
-    setAction(which)
     startTransition(async () => {
-      const result = which === 'seed' ? await loadDemoData() : await resetWorkspaceData()
+      const result = await resetWorkspaceData()
       if (result.error) toast.error(result.error)
       else {
         toast.success(result.message!)
         router.refresh()
       }
-      setAction(null)
     })
   }
 
   return (
     <div className="space-y-5">
-      <Card>
-        <CardHeader
-          title="Sample data"
-          description="Populate the workspace with 48 realistic leads, activity, meetings, and scrape history so you can explore every screen."
-        />
-        <div className="px-5 pb-5">
-          <p className="mb-4 text-sm text-muted-foreground">
-            This workspace currently has{' '}
-            <span className="font-mono text-foreground">{formatNumber(leadCount)}</span> leads.
-            Loading sample data is skipped if any leads already exist.
-          </p>
-          <Button
-            variant="brand"
-            onClick={() => run('seed')}
-            disabled={!isAdmin || pending}
-          >
-            {pending && action === 'seed' ? <Spinner /> : <Database className="size-4" />}
-            Load sample data
-          </Button>
-          {!isAdmin ? (
-            <p className="mt-2 text-xs text-muted-foreground">Only admins can load sample data.</p>
-          ) : null}
-        </div>
-      </Card>
-
       <Card className="border-destructive/30">
         <CardHeader
           title="Danger zone"
@@ -496,10 +592,10 @@ function DataPanel({
           </p>
           <Button
             variant="destructive"
-            onClick={() => run('reset')}
+            onClick={reset}
             disabled={!isAdmin || pending}
           >
-            {pending && action === 'reset' ? <Spinner /> : null}
+            {pending ? <Spinner /> : null}
             Delete all workspace data
           </Button>
         </div>

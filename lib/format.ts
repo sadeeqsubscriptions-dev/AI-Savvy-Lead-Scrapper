@@ -106,3 +106,9 @@ export function greetingFor(date = new Date()) {
   if (hour < 18) return 'Good afternoon'
   return 'Good evening'
 }
+
+/** +17868766717 → +1 (786) 876-6717; other formats are returned as they are. */
+export function formatPhone(value: string) {
+  const match = value.replace(/[^\d+]/g, '').match(/^\+1(\d{3})(\d{3})(\d{4})$/)
+  return match ? `+1 (${match[1]}) ${match[2]}-${match[3]}` : value
+}

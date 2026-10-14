@@ -141,7 +141,7 @@ export function CalendarWorkspace({
         }
       />
 
-      <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <Card>
           <CardHeader
             title={current.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}

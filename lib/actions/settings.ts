@@ -99,24 +99,6 @@ export async function changePassword(_prev: ActionState, formData: FormData): Pr
   return { ok: true, message: 'Password updated.' }
 }
 
-export async function loadDemoData(): Promise<ActionState> {
-  const session = await requireSession()
-  if (!isAdmin(session.role)) return { error: 'Only admins can load demo data.' }
-
-  const supabase = await createClient()
-  const { data, error } = await supabase.rpc('seed_demo_data', {
-    target_org: session.organization.id,
-  })
-
-  if (error) return { error: error.message }
-
-  revalidatePath('/', 'layout')
-
-  return data === 0
-    ? { ok: true, message: 'This workspace already has leads, so nothing was added.' }
-    : { ok: true, message: `Added ${data} sample leads with activity and meetings.` }
-}
-
 export async function resetWorkspaceData(): Promise<ActionState> {
   const session = await requireSession()
   if (!isAdmin(session.role)) return { error: 'Only admins can reset workspace data.' }

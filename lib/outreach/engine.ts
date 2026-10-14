@@ -5,7 +5,7 @@ import { INTENT_LABEL, classifyReply, stageForIntent, type ReplyIntent } from '@
 import { blockedReason, consumeUsage, getEntitlements, limitMessage, type Entitlements } from '@/lib/billing/entitlements'
 import { createAdminClient, hasAdminCredentials } from '@/lib/supabase/admin'
 import { composeEmail, signature, type DraftEmail, type PriorEmail } from './compose'
-import { FOLLOW_UP_DELAYS_DAYS, TOTAL_STEPS, senderConfig } from './config'
+import { FOLLOW_UP_DELAYS_DAYS, TOTAL_STEPS, clampDailyNew } from './config'
 import { ineligibleReason, isDemoLead } from './eligibility'
 import { mailboxFor, orgsWithMailbox } from './mailbox'
 import { messageIdsIn, newMessageId, readInbox, sendMail, stripQuotedReply, type Mailbox } from './mailer'
@@ -77,12 +77,26 @@ export async function sentToday(supabase: Client, orgId: string, firstOnly = fal
   return count ?? 0
 }
 
+/**
+ * The workspace's daily sending pace: new leads per day (set on the Outreach
+ * page) and a safety cap on everything sent, twice that. select('*') so a
+ * database without the daily_new column still works (falls back to 25).
+ */
+export async function dailyPlan(supabase: Client, orgId: string) {
+  const { data } = await supabase.from('outreach_settings').select('*').eq('org_id', orgId).maybeSingle()
+  const dailyNew = clampDailyNew((data as { daily_new?: number | null } | null)?.daily_new)
+  const envCap = Number(process.env.OUTREACH_DAILY_LIMIT) || 0
+  return { dailyNew, dailyLimit: Math.max(envCap, dailyNew * 2) }
+}
+
 async function remainingToday(supabase: Client, orgId: string) {
-  return Math.max(0, senderConfig().dailyLimit - (await sentToday(supabase, orgId)))
+  const { dailyLimit } = await dailyPlan(supabase, orgId)
+  return Math.max(0, dailyLimit - (await sentToday(supabase, orgId)))
 }
 
 async function remainingNewToday(supabase: Client, orgId: string) {
-  return Math.max(0, senderConfig().dailyNew - (await sentToday(supabase, orgId, true)))
+  const { dailyNew } = await dailyPlan(supabase, orgId)
+  return Math.max(0, dailyNew - (await sentToday(supabase, orgId, true)))
 }
 
 async function logActivity(
@@ -349,10 +363,10 @@ export async function startOutreach(
   const flagged = ineligibleReason(lead)
   if (flagged && !force && !reviewed) return { ok: false, error: `Skipped ${lead.full_name}: ${flagged}` }
   if ((await remainingToday(supabase, orgId)) <= 0) {
-    return { ok: false, error: `Daily send limit (${senderConfig().dailyLimit}) reached. Try again tomorrow.` }
+    return { ok: false, error: `Daily send limit (${(await dailyPlan(supabase, orgId)).dailyLimit}) reached. Try again tomorrow.` }
   }
   if ((await remainingNewToday(supabase, orgId)) <= 0) {
-    return { ok: false, error: `Daily target of ${senderConfig().dailyNew} new leads reached. Try again tomorrow.` }
+    return { ok: false, error: `Daily target of ${(await dailyPlan(supabase, orgId)).dailyNew} new leads reached. Try again tomorrow.` }
   }
 
   // Claim the lead before spending anything: the unique (org_id, lead_id)
@@ -925,7 +939,7 @@ export async function estimateUpNext(supabase: Client, orgId: string) {
   const order = [...manual, ...affordable].map((lead) => ({ id: lead.id, timeZone: leadTimezone(lead) }))
   const etas = estimateFirstSends(order, {
     perRun: FIRSTS_PER_RUN,
-    dailyNew: senderConfig().dailyNew,
+    dailyNew: (await dailyPlan(supabase, orgId)).dailyNew,
     sentToday: firstsToday,
   })
   return Object.fromEntries([...etas].map(([id, at]) => [id, at.toISOString()])) as Record<string, string>

@@ -99,7 +99,7 @@ export function AppShell({
         key={item.href}
         href={item.href}
         className={cn(
-          'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200',
+          'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 [@media(max-height:860px)]:py-2 [@media(max-height:720px)]:py-1.5',
           active
             ? variant === 'primary'
               ? 'bg-gradient-brand font-medium text-white shadow-lg shadow-primary/20'
@@ -117,11 +117,11 @@ export function AppShell({
     <div className="min-h-screen bg-background text-foreground">
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-sidebar-border bg-sidebar px-4 py-5 transition-transform duration-200 lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex h-dvh w-64 flex-col border-r border-sidebar-border bg-sidebar px-4 py-5 transition-transform duration-200 lg:translate-x-0 [@media(max-height:860px)]:py-4',
           open ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        <div className="mb-7 flex items-center justify-between gap-2 px-1">
+        <div className="mb-7 flex shrink-0 items-center justify-between gap-2 px-1 [@media(max-height:860px)]:mb-4">
           <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5">
             <LogoMark className="size-8 rounded-lg" />
             <span className="min-w-0">
@@ -143,28 +143,32 @@ export function AppShell({
           </button>
         </div>
 
-        <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Workspace
-        </p>
-        <nav className="flex flex-col gap-1" aria-label="Workspace navigation">
-          {workspaceNav.map((item) => navLink(item, 'primary'))}
-        </nav>
+        <div className="-mx-2 min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 [scrollbar-width:thin]">
+          <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Workspace
+          </p>
+          <nav className="flex flex-col gap-1" aria-label="Workspace navigation">
+            {workspaceNav.map((item) => navLink(item, 'primary'))}
+          </nav>
 
-        <p className="mb-2 mt-7 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Manage
-        </p>
-        <nav className="flex flex-col gap-1" aria-label="Management navigation">
-          {manageNav.map((item) => navLink(item, 'muted'))}
-        </nav>
+          <p className="mb-2 mt-7 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground [@media(max-height:860px)]:mt-4">
+            Manage
+          </p>
+          <nav className="flex flex-col gap-1" aria-label="Management navigation">
+            {manageNav.map((item) => navLink(item, 'muted'))}
+          </nav>
+        </div>
 
-        <div className="mt-auto space-y-3 pt-6">
+        <div className="shrink-0 space-y-3 border-t border-sidebar-border/60 pt-4">
           <Link
             href="/billing"
             className="block rounded-xl border border-sidebar-border bg-card/60 p-3 transition-colors hover:bg-card"
           >
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs text-muted-foreground">{usage.plan} plan</span>
-              <span className="font-mono text-xs">{usage.unlimited ? 'Unlimited' : `${Math.round(percent)}%`}</span>
+              <span className="font-mono text-xs">
+                {usage.unlimited ? 'Unlimited' : `${Math.round(percent)}%`}
+              </span>
             </div>
             <Progress value={usage.unlimited ? 0 : percent} />
             <p className="mt-2 text-[11px] text-muted-foreground">
@@ -232,7 +236,10 @@ export function AppShell({
               onClick={toggleTheme}
               aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
             >
-              <span className="block transition-transform duration-500 ease-out [transform:rotate(0deg)] data-[flip=true]:[transform:rotate(180deg)]" data-flip={theme === 'dark'}>
+              <span
+                className="block transition-transform duration-500 ease-out [transform:rotate(0deg)] data-[flip=true]:[transform:rotate(180deg)]"
+                data-flip={theme === 'dark'}
+              >
                 {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
               </span>
             </button>

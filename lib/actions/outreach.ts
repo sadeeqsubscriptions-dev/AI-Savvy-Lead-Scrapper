@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { canWrite, isAdmin, requireSession } from '@/lib/auth'
+import { DAILY_NEW_MAX, DAILY_NEW_MIN } from '@/lib/outreach/config'
 import {
   canSendNow,
   cancelQueued,
@@ -148,6 +149,33 @@ export async function setAutopilot(enabled: boolean): Promise<SendResult> {
       ok: false,
       error: error.message.includes('outreach_settings')
         ? 'Run the outreach_settings database update first (see setup steps).'
+        : error.message,
+    }
+  }
+  refresh()
+  return { ok: true }
+}
+
+/** How many new leads the autopilot emails per day for this workspace. */
+export async function setDailyNew(value: number): Promise<SendResult> {
+  const session = await requireSession()
+  if (!isAdmin(session.role)) return { ok: false, error: 'Only owners and admins can change the daily pace.' }
+  if (!Number.isFinite(value) || value < DAILY_NEW_MIN || value > DAILY_NEW_MAX) {
+    return { ok: false, error: `Choose between ${DAILY_NEW_MIN} and ${DAILY_NEW_MAX} new leads a day.` }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('outreach_settings')
+    .upsert(
+      { org_id: session.organization.id, daily_new: Math.round(value), updated_at: new Date().toISOString() },
+      { onConflict: 'org_id' },
+    )
+  if (error) {
+    return {
+      ok: false,
+      error: error.message.includes('daily_new')
+        ? 'Run the daily-pace database update first (supabase/migrations/20261015120000_daily_pace.sql).'
         : error.message,
     }
   }

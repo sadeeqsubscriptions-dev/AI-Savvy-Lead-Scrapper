@@ -256,6 +256,8 @@ export type CallEvent = {
 export type OutreachSettings = {
   org_id: string
   autopilot: boolean
+  /** New leads emailed per day; null = the default. */
+  daily_new: number | null
   last_run_at: string | null
   last_run: Json
   updated_at: string
@@ -470,7 +472,7 @@ export type Database = {
       >
       outreach_settings: Table<
         OutreachSettings,
-        Defaulted<OutreachSettings, 'autopilot' | 'last_run_at' | 'last_run' | 'updated_at'>,
+        Defaulted<OutreachSettings, 'autopilot' | 'daily_new' | 'last_run_at' | 'last_run' | 'updated_at'>,
         Partial<OutreachSettings>
       >
       org_billing: Table<OrgBilling, Defaulted<OrgBilling, 'plan' | 'status' | 'stripe_customer_id' | 'stripe_subscription_id' | 'period_start' | 'period_end' | 'twilio_number' | 'twilio_number_sid' | 'updated_at'>, Partial<OrgBilling>>

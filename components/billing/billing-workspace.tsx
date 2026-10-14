@@ -10,7 +10,7 @@ import { Progress, Spinner } from '@/components/ui/progress'
 import { toast } from '@/components/ui/toaster'
 import { buyTopUp, choosePlan, openBillingPortal } from '@/lib/actions/billing'
 import { PAID_PLANS, PLANS, TOP_UPS, isUnlimited, type TopUpId } from '@/lib/billing/plans'
-import { formatDate, formatNumber } from '@/lib/format'
+import { formatDate, formatNumber, formatPhone } from '@/lib/format'
 import type { PlanId } from '@/lib/supabase/types'
 import { cn } from '@/lib/utils'
 
@@ -115,7 +115,7 @@ export function BillingWorkspace(props: Props) {
         </p>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <Card>
           <CardHeader title="This month's usage" description="Counts reset every billing period. Unused amounts don't roll over." />
           <CardBody className="space-y-4">
@@ -151,10 +151,13 @@ export function BillingWorkspace(props: Props) {
             description="Growth and Pro come with your own US number. Leads see it as your caller ID."
           />
           <CardBody>
-            {internal ? (
-              <p className="text-sm text-muted-foreground">Uses the AI Savvy company number.</p>
-            ) : props.phoneNumber ? (
-              <p className="font-mono text-lg font-semibold">{props.phoneNumber}</p>
+            {props.phoneNumber ? (
+              <div>
+                <p className="font-mono text-2xl font-semibold tracking-tight">{formatPhone(props.phoneNumber)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {internal ? 'AI Savvy company number' : 'Your number'} · shown as caller ID on every call from the Dialer
+                </p>
+              </div>
             ) : plan.phoneNumber ? (
               <p className="text-sm text-muted-foreground">Your number is being set up — it appears here within a minute.</p>
             ) : (

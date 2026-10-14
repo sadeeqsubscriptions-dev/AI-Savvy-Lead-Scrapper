@@ -57,7 +57,7 @@ export function TargetingWorkspace({
           />
         </Card>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {leads.map((lead) => (
             <Link key={lead.id} href={`/targeting/${lead.id}`} className="hover-lift group text-left">
               <Card className="h-full p-4">
