@@ -157,7 +157,8 @@ export function StatusWorkspace({ rows, canWrite }: { rows: StatusRow[]; canWrit
                             <Badge tone={outreachStatusTone[row.email_status]}>
                               {outreachStatusLabel[row.email_status]}
                             </Badge>
-                            <p className="text-[11px] text-muted-foreground">
+                            {/* Relative times can tick over between server and browser render. */}
+                            <p className="text-[11px] text-muted-foreground" suppressHydrationWarning>
                               {row.replied_at ? `Replied ${formatRelative(row.replied_at)}` : `${row.emails_sent} sent`}
                             </p>
                           </div>
@@ -174,7 +175,9 @@ export function StatusWorkspace({ rows, canWrite }: { rows: StatusRow[]; canWrit
                         {last ? (
                           <>
                             <p className="truncate text-sm">{last.title}</p>
-                            <p className="text-[11px] text-muted-foreground">{formatRelative(last.created_at)}</p>
+                            <p className="text-[11px] text-muted-foreground" suppressHydrationWarning>
+                              {formatRelative(last.created_at)}
+                            </p>
                           </>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>

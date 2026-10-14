@@ -56,7 +56,8 @@ export function Countdown({
         'inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[11px] text-primary tabular-nums',
         className,
       )}
-      title={`Estimated: ${exact}`}
+      // The server formats in UTC, the browser in local time: add the hint after mount.
+      title={now === null ? undefined : `Estimated: ${exact}`}
     >
       <Timer className="size-3" />
       {now === null ? exact : left ? `${label} ${left}` : 'Sending now…'}
