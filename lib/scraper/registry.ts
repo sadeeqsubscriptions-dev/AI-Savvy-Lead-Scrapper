@@ -1,3 +1,4 @@
+import { apifyProvider } from './providers/apify'
 import { apolloProvider } from './providers/apollo'
 import { browserUseProvider } from './providers/browser-use'
 import { crawl4aiProvider } from './providers/crawl4ai'
@@ -13,6 +14,7 @@ import type { ScrapeProvider } from './types'
 // Ordered roughly by how useful each one is as a starting point.
 const providers: ScrapeProvider[] = [
   smartProvider,
+  apifyProvider,
   firecrawlProvider,
   serpapiProvider,
   apolloProvider,

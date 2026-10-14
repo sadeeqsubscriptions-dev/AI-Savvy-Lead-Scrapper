@@ -60,7 +60,8 @@ export function Countdown({
       title={now === null ? undefined : `Estimated: ${exact}`}
     >
       <Timer className="size-3" />
-      {now === null ? exact : left ? `${label} ${left}` : 'Sending now…'}
+      {/* Server time zone differs from the browser's: show the time only once mounted. */}
+      {now === null ? `${label} …` : left ? `${label} ${left}` : 'Sending now…'}
     </span>
   )
 }

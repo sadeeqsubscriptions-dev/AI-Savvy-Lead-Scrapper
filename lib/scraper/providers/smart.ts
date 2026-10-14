@@ -1,7 +1,7 @@
 /**
  * Smart search — the default source.
  *
- * 1. Finds real local businesses on Google Maps (Places API if configured,
+ * 1. Finds real local businesses on Google Maps (Apify, else Places API,
  *    else SerpApi), which gives name, phone, website, address and rating.
  * 2. Visits each business's own website (home + contact page) to find an
  *    email address and, when listed, the owner's name.
@@ -11,6 +11,7 @@
  */
 
 import { extractContact } from '../extract'
+import { apifyProvider, apifyReady } from './apify'
 import { googleMapsProvider } from './google-maps'
 import { serpapiProvider } from './serpapi'
 import { ScrapeError, type ScrapeContext, type ScrapeProvider, type ScrapedLeadInput } from '../types'
@@ -20,7 +21,7 @@ const PARALLEL_SITES = 6
 const CONTACT_PATHS = ['/contact', '/contact-us', '/about', '/about-us']
 
 export function smartSearchReady() {
-  return Boolean(process.env.GOOGLE_MAPS_API_KEY || process.env.SERPAPI_KEY)
+  return Boolean(apifyReady() || process.env.GOOGLE_MAPS_API_KEY || process.env.SERPAPI_KEY)
 }
 
 async function fetchPage(url: string, signal: AbortSignal) {
@@ -128,7 +129,7 @@ export const smartProvider: ScrapeProvider = {
 
   async run(context) {
     if (!smartSearchReady()) {
-      throw new ScrapeError('Smart search needs GOOGLE_MAPS_API_KEY or SERPAPI_KEY.')
+      throw new ScrapeError('Smart search needs APIFY_API_TOKEN, GOOGLE_MAPS_API_KEY or SERPAPI_KEY.')
     }
 
     let enriched = 0
@@ -144,7 +145,9 @@ export const smartProvider: ScrapeProvider = {
       },
     }
 
+    // Apify first: it handles the biggest searches; the others are fallbacks.
     const sources = [
+      apifyReady() ? apifyProvider : null,
       process.env.GOOGLE_MAPS_API_KEY ? googleMapsProvider : null,
       process.env.SERPAPI_KEY ? serpapiProvider : null,
     ].filter((source): source is ScrapeProvider => source !== null)
