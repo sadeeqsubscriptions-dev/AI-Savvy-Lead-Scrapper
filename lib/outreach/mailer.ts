@@ -20,6 +20,8 @@ export type Mailbox = {
   smtpPort: number
   imapHost: string
   imapPort: number
+  /** Set for inboxes connected with Google / Microsoft sign-in (XOAUTH2) instead of an app password. */
+  accessToken?: string
 }
 
 /** Standard hosts for the providers customers pick in Settings. */
@@ -78,7 +80,9 @@ function createTransport(mailbox: Mailbox) {
     host: mailbox.smtpHost,
     port: mailbox.smtpPort,
     secure: mailbox.smtpPort === 465,
-    auth: { user: mailbox.user, pass: mailbox.pass },
+    auth: mailbox.accessToken
+      ? { type: 'OAuth2', user: mailbox.user, accessToken: mailbox.accessToken }
+      : { user: mailbox.user, pass: mailbox.pass },
   })
 }
 
@@ -87,7 +91,9 @@ function createImap(mailbox: Mailbox) {
     host: mailbox.imapHost,
     port: mailbox.imapPort,
     secure: true,
-    auth: { user: mailbox.user, pass: mailbox.pass },
+    auth: mailbox.accessToken
+      ? { user: mailbox.user, accessToken: mailbox.accessToken }
+      : { user: mailbox.user, pass: mailbox.pass },
     logger: false,
   })
 }

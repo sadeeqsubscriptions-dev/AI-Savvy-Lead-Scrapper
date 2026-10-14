@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { isAdmin, requireSession } from '@/lib/auth'
 import { getEntitlements } from '@/lib/billing/entitlements'
+import { oauthConfigured } from '@/lib/outreach/oauth'
 import { createAdminClient, hasAdminCredentials } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { MailboxForm, SalesProfileForm, type ConnectedMailbox } from '@/components/setup/setup-forms'
@@ -9,7 +10,12 @@ import { MailboxForm, SalesProfileForm, type ConnectedMailbox } from '@/componen
 export const metadata: Metadata = { title: 'Sales setup' }
 
 /** The two things a new workspace fills in before the AI can sell for it. */
-export default async function SetupPage() {
+export default async function SetupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mail_connected?: string; mail_error?: string }>
+}) {
+  const params = await searchParams
   const session = await requireSession()
   const orgId = session.organization.id
   const supabase = await createClient()
@@ -56,8 +62,14 @@ export default async function SetupPage() {
           </p>
         ) : null}
       </div>
-      <SalesProfileForm profile={profile} canEdit={canEdit} />
-      <MailboxForm mailbox={mailbox} canEdit={canEdit} />
+      <SalesProfileForm profile={profile} canEdit={canEdit} fallback={internal} />
+      <MailboxForm
+        mailbox={mailbox}
+        canEdit={canEdit}
+        oauth={{ google: oauthConfigured('google'), microsoft: oauthConfigured('microsoft') }}
+        notice={{ connected: params.mail_connected, error: params.mail_error }}
+        fallback={internal}
+      />
     </div>
   )
 }

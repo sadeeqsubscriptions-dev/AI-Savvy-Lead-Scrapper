@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { TeamWorkspace, type MemberRow } from '@/components/team/team-workspace'
 import { isAdmin, requireSession } from '@/lib/auth'
+import { getEntitlements } from '@/lib/billing/entitlements'
 import { getInvitations, getMembers, getTeamPerformance } from '@/lib/queries'
 
 export const metadata: Metadata = { title: 'Team' }
@@ -31,7 +32,7 @@ export default async function TeamPage() {
       performance={performance}
       isAdmin={admin}
       currentUserId={session.userId}
-      quota={session.organization.lead_quota}
+      quota={(await getEntitlements(session.organization.id)).plan.limits.storedLeads}
     />
   )
 }

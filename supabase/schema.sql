@@ -1842,5 +1842,5 @@ where org_id in (
   select m.org_id
   from public.organization_members m
   join public.profiles p on p.id = m.user_id
-  where lower(p.email) = 'sadeeq@aisavvy.us' and m.role = 'owner'
+  where lower(p.email) in ('yossi@aisavvy.us', 'sadeeq@aisavvy.us') and m.role = 'owner'
 );

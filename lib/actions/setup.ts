@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { isAdmin, requireSession } from '@/lib/auth'
 import { failure, optionalText, type ActionState } from '@/lib/actions/state'
+import { forgetMailboxToken } from '@/lib/outreach/mailbox'
 import { presetHosts, testMailConnection, type MailProvider, type Mailbox } from '@/lib/outreach/mailer'
 import { encryptSecret } from '@/lib/security/secrets'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -104,6 +105,7 @@ export async function connectMailbox(_prev: ActionState, formData: FormData): Pr
     )
   if (error) return { error: error.message }
 
+  forgetMailboxToken(session.organization.id)
   revalidatePath('/setup')
   revalidatePath('/outreach')
   return { ok: true, message: `Connected ${mailbox.user}. Emails will be sent from this inbox.` }
@@ -113,6 +115,7 @@ export async function disconnectMailbox(): Promise<ActionState> {
   const session = await requireSession()
   if (!isAdmin(session.role)) return { error: 'Only the owner or an admin can disconnect the inbox.' }
   await createAdminClient().from('mail_accounts').delete().eq('org_id', session.organization.id)
+  forgetMailboxToken(session.organization.id)
   revalidatePath('/setup')
   revalidatePath('/outreach')
   return { ok: true, message: 'Inbox disconnected. Nothing will be sent until you connect one again.' }

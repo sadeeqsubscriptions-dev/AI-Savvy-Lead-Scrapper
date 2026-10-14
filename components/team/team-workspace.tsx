@@ -137,7 +137,7 @@ export function TeamWorkspace({
         {[
           { label: 'Members', value: formatNumber(members.length) },
           { label: 'Pending invites', value: formatNumber(invitations.length) },
-          { label: 'Leads owned', value: `${formatNumber(totals.leads)} / ${formatNumber(quota)}` },
+          { label: 'Leads owned', value: quota >= 1_000_000_000 ? formatNumber(totals.leads) : `${formatNumber(totals.leads)} / ${formatNumber(quota)}` },
           { label: 'Team pipeline', value: formatCurrency(totals.pipeline) },
         ].map((stat) => (
           <Card key={stat.label} className="p-4">

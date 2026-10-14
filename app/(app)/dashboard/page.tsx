@@ -51,12 +51,12 @@ export default async function DashboardPage() {
     getLeadStatusCounts(orgId),
     supabase
       .from('outreach_messages')
-      .select('body, sent_at, thread:outreach_threads(lead_id, lead:leads(id, full_name, company))')
+      .select('body, sent_at, thread:outreach_threads(lead_id, status, lead:leads(id, full_name, company))')
       .eq('org_id', orgId)
       .eq('direction', 'inbound')
       .gte('sent_at', weekAgo)
       .order('sent_at', { ascending: false })
-      .limit(8),
+      .limit(30),
     supabase
       .from('leads')
       .select('id', { count: 'exact', head: true })
@@ -69,10 +69,12 @@ export default async function DashboardPage() {
   type ReplyRow = {
     body: string
     sent_at: string
-    thread: { lead_id: string; lead: { id: string; full_name: string; company: string | null } | null } | null
+    thread: { lead_id: string; status: string; lead: { id: string; full_name: string; company: string | null } | null } | null
   }
   const replies: RecentReply[] = ((replyRows.data as unknown as ReplyRow[] | null) ?? [])
-    .filter((row) => row.thread?.lead)
+    // Bounce notices land in the inbox too, but they aren't replies.
+    .filter((row) => row.thread?.lead && row.thread.status !== 'bounced')
+    .slice(0, 8)
     .map((row) => ({
       leadId: row.thread!.lead!.id,
       name: row.thread!.lead!.full_name,
