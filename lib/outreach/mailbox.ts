@@ -8,15 +8,15 @@ const tokenCache = new Map<string, { accessToken: string; expiresAt: number }>()
 
 /**
  * The mailbox a workspace sends from and reads replies in:
- *  - the inbox the customer connected on Sales setup — either with Google /
- *    Microsoft sign-in (refresh token stored encrypted) or an app password
- *    (stored encrypted);
- *  - otherwise, for the AI Savvy team's own workspace, the env mailbox.
- * Customers without a connected inbox can't send — nothing ever goes out from
- * someone else's address.
+ *  - the inbox the workspace connected itself — Google / Microsoft sign-in
+ *    (refresh token stored encrypted) or an app password (stored encrypted);
+ *  - the company mailbox (env) ONLY for the AI Savvy team's own workspace,
+ *    and only when its billing row positively says so.
+ * Anything else — no inbox connected, billing unreadable, no service key —
+ * returns null, so a customer can never send from the company address.
  */
 export async function mailboxFor(orgId: string): Promise<Mailbox | null> {
-  if (!hasAdminCredentials()) return envMailbox()
+  if (!hasAdminCredentials()) return null
   const admin = createAdminClient()
 
   const { data: account } = await admin.from('mail_accounts').select('*').eq('org_id', orgId).maybeSingle()
@@ -58,8 +58,7 @@ export async function mailboxFor(orgId: string): Promise<Mailbox | null> {
   }
 
   const { data: billing, error } = await admin.from('org_billing').select('plan').eq('org_id', orgId).maybeSingle()
-  // Before the billing migration (single-workspace setup) the env mailbox is theirs.
-  if (error || billing?.plan === 'internal') return envMailbox()
+  if (!error && billing?.plan === 'internal') return envMailbox()
   return null
 }
 
@@ -76,14 +75,9 @@ export async function orgsWithMailbox(): Promise<string[]> {
     admin.from('org_billing').select('org_id').eq('plan', 'internal'),
   ])
   const ids = new Set((accounts ?? []).map((row) => row.org_id))
-  if (envMailbox()) {
-    if (error) {
-      // Pre-migration: every workspace (there is only the team's) uses env.
-      const { data: orgs } = await admin.from('organizations').select('id')
-      for (const org of orgs ?? []) ids.add(org.id)
-    } else {
-      for (const row of internal ?? []) ids.add(row.org_id)
-    }
+  // The company mailbox only ever serves the team's own workspace.
+  if (envMailbox() && !error) {
+    for (const row of internal ?? []) ids.add(row.org_id)
   }
   return [...ids]
 }

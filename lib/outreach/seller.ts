@@ -50,7 +50,7 @@ export function parseServices(text: string) {
 
 /** The workspace's seller, or null when it hasn't filled in its sales profile yet. */
 export async function sellerFor(orgId: string): Promise<Seller | null> {
-  if (!hasAdminCredentials()) return aiSavvySeller()
+  if (!hasAdminCredentials()) return null
   const admin = createAdminClient()
 
   const [{ data: profile }, { data: billing, error }] = await Promise.all([
@@ -71,8 +71,8 @@ export async function sellerFor(orgId: string): Promise<Seller | null> {
       postalAddress: profile.postal_address,
     }
   }
-  // The team's own workspace (or the pre-migration single-workspace setup).
-  if (error || billing?.plan === 'internal') return aiSavvySeller()
+  // Only the team's own workspace pitches AI Savvy; customers pitch what they sell.
+  if (!error && billing?.plan === 'internal') return aiSavvySeller()
   return null
 }
 

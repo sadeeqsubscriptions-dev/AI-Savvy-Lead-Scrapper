@@ -23,8 +23,10 @@ export async function callerIdFor(orgId: string): Promise<string | null> {
     .select('plan, twilio_number')
     .eq('org_id', orgId)
     .maybeSingle()
-  if (error || billing?.plan === 'internal') return process.env.TWILIO_CALLER_ID || null
-  return billing?.twilio_number ?? null
+  // Unreadable billing = no number: a customer never calls from the company line.
+  if (error || !billing) return null
+  if (billing.plan === 'internal') return process.env.TWILIO_CALLER_ID || null
+  return billing.twilio_number ?? null
 }
 
 /**

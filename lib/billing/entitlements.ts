@@ -34,9 +34,10 @@ function periodOf(billing: OrgBilling | null) {
 export async function getEntitlements(orgId: string): Promise<Entitlements> {
   const admin = createAdminClient()
   const { data: found, error } = await admin.from('org_billing').select('*').eq('org_id', orgId).maybeSingle()
-  // Before the billing migration runs there is no table: keep the original
-  // single-workspace setup working (unlimited) instead of locking it out.
-  const billing = error ? ({ org_id: orgId, plan: 'internal', status: 'active' } as OrgBilling) : found
+  // Fail closed: if billing can't be read, the workspace gets the Free plan
+  // for this request, never someone else's allowance.
+  if (error) console.error('[entitlements] could not read billing', orgId, error.message)
+  const billing = error ? null : found
 
   const paused = Boolean(billing && billing.plan !== 'internal' && billing.plan !== 'free' && billing.status !== 'active')
   const plan = paused ? PLANS.free : planFor(billing?.plan)
@@ -113,7 +114,7 @@ export async function consumeUsage(
   { partial = false }: { partial?: boolean } = {},
 ) {
   if (amount <= 0) return 0
-  if (!hasAdminCredentials()) return amount // local dev without a service key: don't meter
+  if (!hasAdminCredentials()) return 0 // without the service key nothing can be metered, so nothing is granted
   const entitlements = await getEntitlements(orgId)
   const cap = capFor(entitlements.plan, kind)
   if (isUnlimited(cap)) return amount

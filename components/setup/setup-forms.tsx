@@ -1,8 +1,9 @@
 'use client'
 
 import { useActionState, useEffect, useState, useTransition } from 'react'
-import { CheckCircle2, ExternalLink, Mail, Store } from 'lucide-react'
+import { CheckCircle2, Mail, Store } from 'lucide-react'
 import { FormAlert } from '@/components/auth/form-alert'
+import { ConnectGuide } from './connect-guide'
 import { SubmitButton } from '@/components/auth/submit-button'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,13 +15,6 @@ import type { ActionState } from '@/lib/actions/state'
 import type { SalesProfile } from '@/lib/supabase/types'
 
 export type ConnectedMailbox = { email: string; provider: string; verifiedAt: string | null } | null
-
-const HELP: Record<string, string> = {
-  zoho: 'Zoho Mail → Settings → Security → App passwords → Generate. IMAP must be on (Settings → Mail accounts → IMAP access).',
-  gmail: 'Google Account → Security → 2-Step Verification on → App passwords → create one for "Mail".',
-  outlook: 'Microsoft account → Security → Advanced security options → App passwords (2-step verification must be on). Microsoft 365 work accounts: use Continue with Microsoft.',
-  custom: 'Use the SMTP (sending) and IMAP (reading replies) details from your email host.',
-}
 
 export function SalesProfileForm({
   profile,
@@ -126,12 +120,6 @@ export function SalesProfileForm({
 }
 
 export type OAuthOptions = { google: boolean; microsoft: boolean }
-
-const APP_PASSWORD_PAGE: Record<string, string> = {
-  zoho: 'https://accounts.zoho.com/home#security/app_password',
-  gmail: 'https://myaccount.google.com/apppasswords',
-  outlook: 'https://account.live.com/proofs/AppPassword',
-}
 
 /** Best guess of the provider from the address, so most people never touch the dropdown. */
 function guessProvider(email: string): string | null {
@@ -348,22 +336,7 @@ export function MailboxForm({
                   </>
                 ) : null}
               </div>
-              <div className="flex flex-col gap-3 rounded-lg bg-secondary/50 p-3 text-xs leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-                <p>
-                  <span className="font-medium text-foreground">How to get an app password: </span>
-                  {HELP[provider]} We test the login before saving and store it encrypted.
-                </p>
-                {APP_PASSWORD_PAGE[provider] ? (
-                  <a
-                    href={APP_PASSWORD_PAGE[provider]}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 font-medium text-foreground hover:bg-secondary"
-                  >
-                    Open app password page <ExternalLink className="size-3.5" />
-                  </a>
-                ) : null}
-              </div>
+              <ConnectGuide provider={provider} />
               <div className="flex justify-end gap-2">
                 {mailbox ? (
                   <Button variant="ghost" onClick={() => setEditing(false)}>
