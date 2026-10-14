@@ -3,7 +3,7 @@ import type { LeadStatus, MemberRole } from '@/lib/supabase/types'
 export const APP_NAME = 'AI Savvy Leads Scrapper'
 
 /** Shown on the landing page, legal pages and footer. Override with NEXT_PUBLIC_SUPPORT_EMAIL. */
-export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'sadeeq@aisavvy.us'
+export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'yossi@aisavvy.us'
 export const COMPANY_NAME = 'AI Savvy'
 export const COMPANY_URL = 'https://aisavvy.us'
 
