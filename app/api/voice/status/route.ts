@@ -12,7 +12,9 @@ export async function POST(request: Request) {
   const params = await formParams(request)
   if (!isTwilioRequest(request, params)) return new Response('Forbidden', { status: 403 })
 
-  const callId = new URL(request.url).searchParams.get('callId')
+  const url = new URL(request.url)
+  const callId = url.searchParams.get('callId')
+  const inbound = url.searchParams.get('inbound') === '1'
   if (callId) {
     const answered = params.DialCallStatus === 'completed'
     const supabase = createAdminClient()
@@ -40,6 +42,10 @@ export async function POST(request: Request) {
   }
 
   const response = new VoiceResponse()
+  // A caller nobody picked up gets told what to do instead of dead air.
+  if (inbound && params.DialCallStatus !== 'completed') {
+    response.say('Sorry, nobody could pick up right now. Please send a text to this number and we will get back to you.')
+  }
   response.hangup()
   return new Response(response.toString(), { headers: { 'Content-Type': 'text/xml' } })
 }

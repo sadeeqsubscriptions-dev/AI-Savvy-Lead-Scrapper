@@ -2,16 +2,23 @@ import { AppShell } from '@/components/app-shell'
 import { requireSession } from '@/lib/auth'
 import { getEntitlements } from '@/lib/billing/entitlements'
 import { isUnlimited } from '@/lib/billing/plans'
+import { hasAdminCredentials } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
+import { numberFor } from '@/lib/voice/numbers'
+import { voiceConfigured } from '@/lib/voice/twilio'
+import { IncomingCalls } from '@/components/voice/incoming-calls'
 
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const session = await requireSession()
   const supabase = await createClient()
 
-  const [{ count }, entitlements] = await Promise.all([
+  const [{ count }, entitlements, ownNumber] = await Promise.all([
     supabase.from('leads').select('id', { count: 'exact', head: true }).eq('org_id', session.organization.id),
     getEntitlements(session.organization.id),
+    voiceConfigured() && hasAdminCredentials() ? numberFor(session.organization.id, session.userId) : Promise.resolve(null),
   ])
+  // Teammates with their own number get rung in the browser when it's called.
+  const receivesCalls = Boolean(ownNumber && ownNumber.assigned_to === session.userId && ownNumber.voice)
   const { plan, usage, bonus, remaining } = entitlements
   const paid = plan.price > 0
 
@@ -35,6 +42,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
       }}
     >
       {children}
+      {receivesCalls ? <IncomingCalls /> : null}
     </AppShell>
   )
 }

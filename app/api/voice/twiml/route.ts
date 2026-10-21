@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getEntitlements } from '@/lib/billing/entitlements'
-import { toE164 } from '@/lib/phone'
+import { formatPhone, toE164 } from '@/lib/phone'
+import { leadForPhone } from '@/lib/sms/messages'
 import { callerIdFor } from '@/lib/voice/numbers'
 import { VoiceResponse, formParams, isTwilioRequest, publicBaseUrl } from '@/lib/voice/twilio'
 
@@ -31,20 +32,58 @@ export async function POST(request: Request) {
   const identity = (params.From ?? '').replace(/^client:/, '')
   const supabase = createAdminClient()
 
-  // Someone calling one of the team's numbers back: ring the teammate's own
-  // phone (from their profile) with the team number as caller ID.
+  // Someone calling one of the team's numbers: ring the teammate it belongs
+  // to in the app (any page they have open) and on the mobile from their
+  // profile at the same time; whichever answers first takes it. Logged as a
+  // call on the matching lead.
   if (!callId && params.Direction === 'inbound' && to) {
-    const { data: number } = await supabase.from('phone_numbers').select('assigned_to, friendly_name').eq('phone_number', to).maybeSingle()
-    const { data: owner } = number?.assigned_to
+    const from = params.From ?? ''
+    const { data: number } = await supabase.from('phone_numbers').select('*').eq('phone_number', to).maybeSingle()
+    if (!number) return reject('This number is not set up for calls yet.')
+
+    const { data: owner } = number.assigned_to
       ? await supabase.from('profiles').select('phone').eq('id', number.assigned_to).maybeSingle()
       : { data: null }
-    const forwardTo = owner?.phone ? toE164(owner.phone) : null
-    if (!forwardTo) {
+    const mobile = owner?.phone ? toE164(owner.phone) : null
+    if (!number.assigned_to && !mobile) {
       return reject('Thanks for calling. Nobody can pick up right now; please send a text to this number and we will get back to you.')
     }
+
+    const lead = from ? await leadForPhone(number.org_id, from) : null
+    const { data: call } = await supabase
+      .from('calls')
+      .insert({
+        org_id: number.org_id,
+        lead_id: lead?.id ?? null,
+        user_id: number.assigned_to,
+        to_number: from || to,
+        status: 'in_progress',
+        twilio_call_sid: params.CallSid ?? null,
+      })
+      .select('id')
+      .single()
+    if (lead) {
+      await supabase.from('lead_activities').insert({
+        org_id: number.org_id,
+        lead_id: lead.id,
+        user_id: number.assigned_to,
+        type: 'call',
+        title: `Incoming call · ${formatPhone(from)}`,
+        metadata: { call_id: call?.id ?? null, direction: 'inbound' },
+      })
+    }
+
+    const base = publicBaseUrl(request)
     const response = new VoiceResponse()
-    response.dial({ callerId: to, timeout: 25 }).number(forwardTo)
-    response.say('Sorry, nobody could pick up. Please send a text to this number and we will get back to you.')
+    const dial = response.dial({
+      // The caller's own number is shown, as Twilio allows when forwarding a call it received.
+      callerId: from || to,
+      timeout: 25,
+      answerOnBridge: true,
+      action: `${base}/api/voice/status?callId=${call?.id ?? ''}&inbound=1`,
+    })
+    if (number.assigned_to) dial.client(number.assigned_to)
+    if (mobile) dial.number(mobile)
     return twiml(response.toString())
   }
 

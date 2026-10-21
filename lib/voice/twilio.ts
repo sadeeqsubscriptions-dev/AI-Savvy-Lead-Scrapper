@@ -44,7 +44,8 @@ export function voiceToken(identity: string) {
     identity,
     ttl: 60 * 60,
   })
-  token.addGrant(new AccessToken.VoiceGrant({ outgoingApplicationSid: config.twimlAppSid }))
+  // incomingAllow lets a registered browser ring when someone calls the rep's own number.
+  token.addGrant(new AccessToken.VoiceGrant({ outgoingApplicationSid: config.twimlAppSid, incomingAllow: true }))
   return token.toJwt()
 }
 
@@ -54,13 +55,16 @@ export function callerId() {
 
 /**
  * Public base URL Twilio calls back to. Uses NEXT_PUBLIC_SITE_URL when it is a
- * real https address; otherwise (unset, or left at localhost) the address the
- * request came in on, which on Vercel is the live site.
+ * real https address, else the production URL Vercel sets on every deploy,
+ * else the address the request came in on. Empty only on a local machine
+ * with nothing configured.
  */
 export function publicBaseUrl(request?: Request) {
   const configured = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')
   if (/^https:\/\//.test(configured) && !/localhost|127\.0\.0\.1/.test(configured)) return configured
-  return request ? new URL(request.url).origin : configured
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  if (request) return new URL(request.url).origin
+  return /localhost|127\.0\.0\.1/.test(configured) ? '' : configured
 }
 
 /**

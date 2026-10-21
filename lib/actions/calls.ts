@@ -10,7 +10,8 @@ import { NO_MAILBOX_ERROR, replyToThread, startOutreach } from '@/lib/outreach/e
 import { mailboxFor } from '@/lib/outreach/mailbox'
 import { calendarInvite, newMessageId, sendMail } from '@/lib/outreach/mailer'
 import { NO_PROFILE_ERROR, sellerFor } from '@/lib/outreach/seller'
-import { callerIdFor } from '@/lib/voice/numbers'
+import { leadForPhone } from '@/lib/sms/messages'
+import { callerIdFor, numberFor } from '@/lib/voice/numbers'
 import { withQueue } from '@/lib/outreach/queue-shape'
 import { leadTimezone } from '@/lib/outreach/schedule'
 import { formatPhone, toE164 } from '@/lib/phone'
@@ -61,6 +62,26 @@ export async function startCall(leadId: string, rawNumber: string) {
   if (error || !call) return { ok: false as const, error: 'Could not start the call.' }
 
   return { ok: true as const, callId: call.id, to, token: voiceToken(session.userId) }
+}
+
+/**
+ * Token for the browser to *receive* calls on the rep's own number. Only
+ * teammates with a number assigned to them get one.
+ */
+export async function incomingCallToken() {
+  const session = await requireSession()
+  if (!voiceConfigured()) return { ok: false as const, error: 'Calling is not set up.' }
+  const own = await numberFor(session.organization.id, session.userId)
+  if (!own || own.assigned_to !== session.userId || !own.voice) return { ok: false as const, error: 'No number assigned to you.' }
+  return { ok: true as const, token: voiceToken(session.userId), number: own.phone_number }
+}
+
+/** Who is calling: the lead with that number, if any. */
+export async function callerInfo(rawNumber: string) {
+  const session = await requireSession()
+  const e164 = toE164(rawNumber)
+  if (!e164) return null
+  return leadForPhone(session.organization.id, e164)
 }
 
 async function loadCall(callId: string) {

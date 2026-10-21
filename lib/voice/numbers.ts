@@ -1,3 +1,4 @@
+import { headers } from 'next/headers'
 import twilio from 'twilio'
 import { PHONE_NUMBER_PRICE } from '@/lib/billing/plans'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -59,16 +60,29 @@ export async function callerIdFor(orgId: string, userId?: string | null): Promis
   return billing.plan === 'internal' ? process.env.TWILIO_CALLER_ID || null : null
 }
 
-/** Where Twilio sends texts: the live site. Localhost can't receive webhooks. */
-function webhookBase() {
-  const base = publicBaseUrl()
+/**
+ * Where Twilio sends texts: the live site. Falls back to the host of the
+ * request being handled (a page load or action on the deployed site).
+ * Localhost can't receive webhooks.
+ */
+async function webhookBase() {
+  let base = publicBaseUrl()
+  if (!base) {
+    try {
+      const incoming = await headers()
+      const host = incoming.get('x-forwarded-host') ?? incoming.get('host')
+      if (host && !/localhost|127\.0\.0\.1/.test(host)) base = `${incoming.get('x-forwarded-proto') ?? 'https'}://${host}`
+    } catch {
+      // Not inside a request (e.g. a webhook with its own URL); handled below.
+    }
+  }
   if (!base) throw new Error('Set NEXT_PUBLIC_SITE_URL to the live https address so Twilio can reach the app.')
   return base
 }
 
 /** Points the number's voice and SMS webhooks at this app. */
 async function configureInTwilio(sid: string) {
-  const base = webhookBase()
+  const base = await webhookBase()
   await twilioClient().incomingPhoneNumbers(sid).update({
     voiceApplicationSid: process.env.TWILIO_TWIML_APP_SID,
     smsUrl: `${base}/api/sms/inbound`,
@@ -113,7 +127,7 @@ export async function provisionNumber(
   const pick = candidates[0]
   if (!pick) throw new Error(`No ${country} numbers available right now.`)
 
-  const base = webhookBase()
+  const base = await webhookBase()
   const bought = await client.incomingPhoneNumbers.create({
     phoneNumber: pick.phoneNumber,
     friendlyName: `AI Savvy ${friendlyName} (${orgId.slice(0, 8)})`,
