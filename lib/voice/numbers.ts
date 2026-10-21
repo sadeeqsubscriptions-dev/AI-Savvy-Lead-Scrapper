@@ -183,14 +183,22 @@ export async function attachNumber(
   return data as PhoneNumber
 }
 
+/** A number plus, when it isn't wired up yet, the reason. */
+export type SyncedNumber = PhoneNumber & { problem?: string }
+
 /**
  * Numbers saved without their Twilio details (seeded by hand) get looked up
  * and wired the first time the team page or SMS page loads with Twilio keys
- * available. Returns the numbers, repaired where possible.
+ * available. Returns the numbers, repaired where possible; the ones that
+ * couldn't be say why in `problem`.
  */
-export async function syncNumbers(orgId: string): Promise<PhoneNumber[]> {
-  const numbers = await listNumbers(orgId)
-  if (!twilioReady() || numbers.every((number) => number.configured_at)) return numbers
+export async function syncNumbers(orgId: string): Promise<SyncedNumber[]> {
+  const numbers: SyncedNumber[] = await listNumbers(orgId)
+  if (numbers.every((number) => number.configured_at)) return numbers
+  if (!twilioReady()) {
+    for (const number of numbers) if (!number.configured_at) number.problem = 'Twilio keys are not set on this server.'
+    return numbers
+  }
 
   const admin = createAdminClient()
   for (const number of numbers) {
@@ -200,7 +208,10 @@ export async function syncNumbers(orgId: string): Promise<PhoneNumber[]> {
       let capabilities: { voice?: boolean; sms?: boolean } | undefined
       if (!sid) {
         const [owned] = await twilioClient().incomingPhoneNumbers.list({ phoneNumber: number.phone_number, limit: 1 })
-        if (!owned) continue
+        if (!owned) {
+          number.problem = 'This number is not in the Twilio account the server uses.'
+          continue
+        }
         sid = owned.sid
         capabilities = owned.capabilities
       }
@@ -215,6 +226,7 @@ export async function syncNumbers(orgId: string): Promise<PhoneNumber[]> {
       Object.assign(number, patch)
     } catch (error) {
       console.error('[numbers] could not configure', number.phone_number, error)
+      number.problem = error instanceof Error ? error.message : 'Twilio rejected the request.'
     }
   }
   return numbers

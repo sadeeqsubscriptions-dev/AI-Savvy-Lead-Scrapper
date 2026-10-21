@@ -32,6 +32,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
     sms: number.sms,
     voice: number.voice,
     configured: Boolean(number.configured_at),
+    problem: number.problem ?? null,
   }))
 
   const rows: MemberRow[] = members.map((member) => ({

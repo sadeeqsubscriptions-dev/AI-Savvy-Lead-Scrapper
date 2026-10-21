@@ -25,6 +25,8 @@ export type PhoneNumberRow = {
   sms: boolean
   voice: boolean
   configured: boolean
+  /** Why the app couldn't wire it up in Twilio yet. */
+  problem: string | null
 }
 
 const sourceLabel: Record<PhoneNumberSource, string> = {
@@ -117,17 +119,17 @@ export function PhoneNumbers({
     })
   }
 
-  const assigneeOptions = (
-    <>
-      <option value="">Shared by the team</option>
-      {members.map((member) => (
-        <option key={member.userId} value={member.userId}>
-          {member.name}
-          {member.userId === currentUserId ? ' (you)' : ''}
-        </option>
-      ))}
-    </>
-  )
+  // A flat list of <option>s (not a fragment): Select reads its items from its direct children.
+  const assigneeOptions = [
+    <option key="" value="">
+      Shared by the team
+    </option>,
+    ...members.map((member) => (
+      <option key={member.userId} value={member.userId}>
+        {member.userId === currentUserId ? `${member.name} (you)` : member.name}
+      </option>
+    )),
+  ]
 
   return (
     <Card>
@@ -215,7 +217,9 @@ export function PhoneNumbers({
                         {number.source === 'purchased' ? ` · $${number.monthlyPrice}/mo` : ''}
                       </Badge>
                       {!number.configured ? (
-                        <p className="mt-1 text-[11px] text-warning">Waiting for Twilio details</p>
+                        <p className="mt-1 max-w-56 text-[11px] leading-4 text-warning" title={number.problem ?? undefined}>
+                          Not connected to Twilio yet{number.problem ? `: ${number.problem}` : ''}
+                        </p>
                       ) : null}
                     </td>
                     <td className="px-4 py-3">
