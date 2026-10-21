@@ -148,7 +148,7 @@ export function BillingWorkspace(props: Props) {
                 <Phone className="size-4 text-primary" /> Calling number
               </span>
             }
-            description="Growth and Pro come with your own US number. Leads see it as your caller ID."
+            description="Growth and Pro come with your own US number for calls and texts. Extra numbers for teammates are added on the Team page."
           />
           <CardBody>
             {props.phoneNumber ? (

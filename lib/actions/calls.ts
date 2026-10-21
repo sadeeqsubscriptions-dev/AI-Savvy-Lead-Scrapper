@@ -37,7 +37,7 @@ export async function startCall(leadId: string, rawNumber: string) {
   const allowed = await requireFeature(session.organization.id, 'calling')
   if (!allowed.ok) return allowed
   if (allowed.entitlements.remaining.callMinutes < 1) return { ok: false as const, error: limitMessage('call_seconds') }
-  if (!(await callerIdFor(session.organization.id))) {
+  if (!(await callerIdFor(session.organization.id, session.userId))) {
     return { ok: false as const, error: 'Your phone number is still being set up. Try again in a minute, or contact support.' }
   }
 

@@ -1,8 +1,8 @@
 import Stripe from 'stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { PlanId } from '@/lib/supabase/types'
-import { releaseNumber, provisionNumber } from '@/lib/voice/numbers'
-import { PLANS, planFor } from './plans'
+import { provisionNumber, releaseNumberById, releasePlanNumber } from '@/lib/voice/numbers'
+import { PHONE_NUMBER_PRICE, PLANS, planFor } from './plans'
 
 /**
  * Stripe glue. Plans are created in Stripe automatically on first use (looked
@@ -53,6 +53,34 @@ export async function priceFor(planId: PlanId) {
   return priceId
 }
 
+/** The monthly price for one extra phone number, created in Stripe the first time it's needed. */
+export async function phoneNumberPrice() {
+  const lookupKey = `ai_savvy_phone_number_monthly_${PHONE_NUMBER_PRICE}`
+  const cached = priceCache.get(lookupKey)
+  if (cached) return cached
+
+  const { data } = await stripe().prices.list({ lookup_keys: [lookupKey], active: true, limit: 1 })
+  let priceId = data[0]?.id
+  if (!priceId) {
+    const product = await stripe().products.create({
+      name: 'AI Savvy Lead Scraper — Extra phone number',
+      description: 'A US phone number for one teammate: calls with the AI coach and SMS.',
+      metadata: { kind: 'phone_number' },
+    })
+    const price = await stripe().prices.create({
+      product: product.id,
+      currency: 'usd',
+      unit_amount: PHONE_NUMBER_PRICE * 100,
+      recurring: { interval: 'month' },
+      lookup_key: lookupKey,
+      metadata: { kind: 'phone_number' },
+    })
+    priceId = price.id
+  }
+  priceCache.set(lookupKey, priceId)
+  return priceId
+}
+
 /** The workspace's Stripe customer, created on first checkout. */
 export async function customerFor(orgId: string, { email, name }: { email: string; name: string }) {
   const admin = createAdminClient()
@@ -81,6 +109,8 @@ function statusOf(subscription: Stripe.Subscription): 'active' | 'past_due' | 'c
  * the phone number that comes with Growth and Pro.
  */
 export async function applySubscription(subscription: Stripe.Subscription) {
+  if (subscription.metadata?.kind === 'phone_number') return applyPhoneNumberSubscription(subscription)
+
   const admin = createAdminClient()
   let orgId: string | undefined = subscription.metadata?.org_id
   if (!orgId) {
@@ -109,7 +139,7 @@ export async function applySubscription(subscription: Stripe.Subscription) {
         updated_at: new Date().toISOString(),
       })
       .eq('org_id', orgId)
-    await releaseNumber(orgId)
+    await releasePlanNumber(orgId)
     return
   }
 
@@ -135,7 +165,44 @@ export async function applySubscription(subscription: Stripe.Subscription) {
       console.error('[billing] could not buy a phone number', orgId, error)
     }
   } else if (!PLANS[planId].phoneNumber) {
-    await releaseNumber(orgId)
+    await releasePlanNumber(orgId)
+  }
+}
+
+/**
+ * An extra number bought for a teammate: its own monthly subscription. The
+ * number is bought when the subscription starts and released when it ends.
+ * If Twilio has nothing to sell, the subscription is cancelled so nobody pays
+ * for a number they never got.
+ */
+async function applyPhoneNumberSubscription(subscription: Stripe.Subscription) {
+  const admin = createAdminClient()
+  const orgId = subscription.metadata?.org_id
+  if (!orgId) return
+  const { data: existing } = await admin
+    .from('phone_numbers')
+    .select('id')
+    .eq('stripe_subscription_id', subscription.id)
+    .maybeSingle()
+
+  if (statusOf(subscription) === 'canceled') {
+    if (existing) await releaseNumberById(existing.id)
+    return
+  }
+  if (existing || statusOf(subscription) !== 'active') return
+
+  const areaCode = Number(subscription.metadata?.area_code) || undefined
+  try {
+    await provisionNumber(orgId, {
+      areaCode,
+      friendlyName: subscription.metadata?.friendly_name?.trim() || 'Team number',
+      assignedTo: subscription.metadata?.assigned_to || null,
+      source: 'purchased',
+      stripeSubscriptionId: subscription.id,
+    })
+  } catch (error) {
+    console.error('[billing] could not buy an extra phone number', orgId, error)
+    await stripe().subscriptions.cancel(subscription.id, { prorate: true })
   }
 }
 

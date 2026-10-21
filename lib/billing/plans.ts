@@ -124,6 +124,13 @@ export const TOP_UPS: Record<TopUpId, { id: TopUpId; name: string; price: number
 
 export type UsageKind = 'leads_found' | 'ai_leads' | 'call_seconds'
 
+/**
+ * USD per month for each extra phone number an admin buys for a teammate,
+ * billed as its own Stripe subscription next to the plan. Free on the AI
+ * Savvy workspace (its numbers live in the company Twilio account).
+ */
+export const PHONE_NUMBER_PRICE = 10
+
 export function planFor(id: string | null | undefined): Plan {
   return PLANS[(id as PlanId) in PLANS ? (id as PlanId) : 'free']
 }

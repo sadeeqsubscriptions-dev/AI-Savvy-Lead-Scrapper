@@ -13,6 +13,7 @@ import {
   CalendarClock,
   ExternalLink,
   Mail,
+  MessageSquare,
   Mic,
   MicOff,
   PhoneCall,
@@ -509,6 +510,14 @@ export function CallWorkspace({
             </Button>
           )}
 
+          <Link
+            href={toE164(number) ? `/sms?to=${encodeURIComponent(toE164(number)!)}&lead=${lead.id}` : '/sms'}
+            className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
+            aria-label="Text this number"
+            title="Text"
+          >
+            <MessageSquare className="size-4" />
+          </Link>
           <Link
             href={`/targeting/${lead.id}`}
             className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}

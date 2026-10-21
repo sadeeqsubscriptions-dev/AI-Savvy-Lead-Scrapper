@@ -18,6 +18,7 @@ import { Field, Input, Select } from '@/components/ui/field'
 import { Modal } from '@/components/ui/modal'
 import { Progress } from '@/components/ui/progress'
 import { toast } from '@/components/ui/toaster'
+import { PhoneNumbers, type PhoneNumberRow } from './phone-numbers'
 
 export type MemberRow = {
   userId: string
@@ -42,6 +43,8 @@ export function TeamWorkspace({
   isAdmin,
   currentUserId,
   quota,
+  numbers,
+  phone,
 }: {
   members: MemberRow[]
   invitations: Invitation[]
@@ -49,6 +52,8 @@ export function TeamWorkspace({
   isAdmin: boolean
   currentUserId: string
   quota: number
+  numbers: PhoneNumberRow[]
+  phone: { internal: boolean; callingIncluded: boolean; justBought: boolean }
 }) {
   const router = useRouter()
   const [inviting, setInviting] = useState(false)
@@ -61,6 +66,18 @@ export function TeamWorkspace({
       router.refresh()
     }
   }, [state, router])
+
+  // Back from paying for a number: it shows up as soon as Stripe confirms, usually within seconds.
+  useEffect(() => {
+    if (!phone.justBought) return
+    toast.success('Payment received. Your new number appears below in a moment.')
+    const timer = window.setTimeout(() => router.replace('/team'), 8000)
+    const refresh = window.setInterval(() => router.refresh(), 3000)
+    return () => {
+      window.clearTimeout(timer)
+      window.clearInterval(refresh)
+    }
+  }, [phone.justBought, router])
 
   const totals = performance.reduce(
     (accumulator, row) => ({
@@ -257,6 +274,15 @@ export function TeamWorkspace({
           </table>
         </div>
       </Card>
+
+      <PhoneNumbers
+        numbers={numbers}
+        members={members.map((member) => ({ userId: member.userId, name: member.name }))}
+        isAdmin={isAdmin}
+        internal={phone.internal}
+        callingIncluded={phone.callingIncluded}
+        currentUserId={currentUserId}
+      />
 
       {isAdmin ? (
         <Card>

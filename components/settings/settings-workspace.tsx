@@ -459,7 +459,7 @@ function IntegrationsPanel({
                 <Phone className="size-4 text-primary" /> Calling number
               </span>
             }
-            description="The number leads see when you call from the Dialer."
+            description="The number leads see when you call or text. Numbers are managed on the Team page."
             action={
               integrations.phoneNumber ? (
                 <Badge tone="success">Active</Badge>

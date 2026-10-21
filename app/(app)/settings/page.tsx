@@ -29,7 +29,7 @@ export default async function SettingsPage() {
           .then(({ data }) => data)
       : Promise.resolve(null),
     supabase.from('sales_profiles').select('company_name, services').eq('org_id', orgId).maybeSingle(),
-    callerIdFor(orgId),
+    callerIdFor(orgId, session.userId),
   ])
 
   const internal = entitlements.plan.id === 'internal'

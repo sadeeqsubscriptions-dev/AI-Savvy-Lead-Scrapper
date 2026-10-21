@@ -18,7 +18,7 @@ export default async function BillingPage({
     searchParams,
     getEntitlements(orgId),
     seatsLeft(orgId),
-    callerIdFor(orgId),
+    callerIdFor(orgId, session.userId),
   ])
   const billing = entitlements.billing
 

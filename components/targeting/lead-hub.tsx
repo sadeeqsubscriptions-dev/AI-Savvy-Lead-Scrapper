@@ -13,6 +13,7 @@ import {
   Globe,
   Mail,
   MapPin,
+  MessageSquare,
   Phone,
   PhoneCall,
   RefreshCw,
@@ -186,10 +187,16 @@ export function LeadHub({
             ))}
           </Select>
           {lead.phone ? (
-            <Link href={`/dialer/${lead.id}`} className={buttonVariants({ variant: 'outline' })}>
-              <PhoneCall className="size-4" />
-              Call
-            </Link>
+            <>
+              <Link href={`/dialer/${lead.id}`} className={buttonVariants({ variant: 'outline' })}>
+                <PhoneCall className="size-4" />
+                Call
+              </Link>
+              <Link href={`/sms?to=${encodeURIComponent(lead.phone)}&lead=${lead.id}`} className={buttonVariants({ variant: 'outline' })}>
+                <MessageSquare className="size-4" />
+                Text
+              </Link>
+            </>
           ) : null}
           <Link href={`/crm?lead=${lead.id}`} className={buttonVariants({ variant: 'ghost' })}>
             <Database className="size-4" />

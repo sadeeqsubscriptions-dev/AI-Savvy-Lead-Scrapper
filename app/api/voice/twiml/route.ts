@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getEntitlements } from '@/lib/billing/entitlements'
+import { toE164 } from '@/lib/phone'
 import { callerIdFor } from '@/lib/voice/numbers'
 import { VoiceResponse, formParams, isTwilioRequest, publicBaseUrl } from '@/lib/voice/twilio'
 
@@ -28,9 +29,27 @@ export async function POST(request: Request) {
   const callId = params.CallId
   const to = params.To
   const identity = (params.From ?? '').replace(/^client:/, '')
+  const supabase = createAdminClient()
+
+  // Someone calling one of the team's numbers back: ring the teammate's own
+  // phone (from their profile) with the team number as caller ID.
+  if (!callId && params.Direction === 'inbound' && to) {
+    const { data: number } = await supabase.from('phone_numbers').select('assigned_to, friendly_name').eq('phone_number', to).maybeSingle()
+    const { data: owner } = number?.assigned_to
+      ? await supabase.from('profiles').select('phone').eq('id', number.assigned_to).maybeSingle()
+      : { data: null }
+    const forwardTo = owner?.phone ? toE164(owner.phone) : null
+    if (!forwardTo) {
+      return reject('Thanks for calling. Nobody can pick up right now; please send a text to this number and we will get back to you.')
+    }
+    const response = new VoiceResponse()
+    response.dial({ callerId: to, timeout: 25 }).number(forwardTo)
+    response.say('Sorry, nobody could pick up. Please send a text to this number and we will get back to you.')
+    return twiml(response.toString())
+  }
+
   if (!callId || !to) return reject('This call is missing details. Please try again from the dialer.')
 
-  const supabase = createAdminClient()
   const { data: call } = await supabase.from('calls').select('*').eq('id', callId).maybeSingle()
 
   if (!call || call.status !== 'dialing' || call.to_number !== to || call.user_id !== identity) {
@@ -42,8 +61,8 @@ export async function POST(request: Request) {
     .update({ status: 'in_progress', twilio_call_sid: params.CallSid ?? null })
     .eq('id', call.id)
 
-  // Call from the workspace's own number, and never past the minutes it has left.
-  const [fromNumber, entitlements] = await Promise.all([callerIdFor(call.org_id), getEntitlements(call.org_id)])
+  // Call from the rep's own number (or the workspace's), and never past the minutes it has left.
+  const [fromNumber, entitlements] = await Promise.all([callerIdFor(call.org_id, call.user_id), getEntitlements(call.org_id)])
   const minutesLeft = entitlements.remaining.callMinutes
   if (!fromNumber || !entitlements.plan.features.calling || minutesLeft < 1) {
     return reject('Calling is not available on this workspace right now. Please check your plan.')

@@ -273,9 +273,46 @@ export type OrgBilling = {
   stripe_subscription_id: string | null
   period_start: string
   period_end: string | null
-  twilio_number: string | null
-  twilio_number_sid: string | null
   updated_at: string
+}
+
+export type PhoneNumberSource = 'plan' | 'purchased' | 'attached'
+
+/** A Twilio number the workspace owns; optionally one teammate's own line. */
+export type PhoneNumber = Timestamps & {
+  id: string
+  org_id: string
+  /** E.164. */
+  phone_number: string
+  twilio_sid: string | null
+  friendly_name: string
+  assigned_to: string | null
+  source: PhoneNumberSource
+  stripe_subscription_id: string | null
+  monthly_price_cents: number
+  voice: boolean
+  sms: boolean
+  configured_at: string | null
+}
+
+export type SmsDirection = 'inbound' | 'outbound'
+export type SmsStatus = 'queued' | 'sent' | 'delivered' | 'failed' | 'received'
+
+export type SmsMessage = {
+  id: string
+  org_id: string
+  phone_number_id: string
+  direction: SmsDirection
+  /** The other party, E.164. */
+  contact_number: string
+  body: string
+  lead_id: string | null
+  user_id: string | null
+  twilio_sid: string | null
+  status: SmsStatus
+  error: string | null
+  read_at: string | null
+  created_at: string
 }
 
 export type OrgUsage = {
@@ -475,7 +512,21 @@ export type Database = {
         Defaulted<OutreachSettings, 'autopilot' | 'daily_new' | 'last_run_at' | 'last_run' | 'updated_at'>,
         Partial<OutreachSettings>
       >
-      org_billing: Table<OrgBilling, Defaulted<OrgBilling, 'plan' | 'status' | 'stripe_customer_id' | 'stripe_subscription_id' | 'period_start' | 'period_end' | 'twilio_number' | 'twilio_number_sid' | 'updated_at'>, Partial<OrgBilling>>
+      org_billing: Table<OrgBilling, Defaulted<OrgBilling, 'plan' | 'status' | 'stripe_customer_id' | 'stripe_subscription_id' | 'period_start' | 'period_end' | 'updated_at'>, Partial<OrgBilling>>
+      phone_numbers: Table<
+        PhoneNumber,
+        Defaulted<
+          PhoneNumber,
+          | 'id' | 'twilio_sid' | 'friendly_name' | 'assigned_to' | 'source' | 'stripe_subscription_id'
+          | 'monthly_price_cents' | 'voice' | 'sms' | 'configured_at' | 'created_at' | 'updated_at'
+        >,
+        Partial<PhoneNumber>
+      >
+      sms_messages: Table<
+        SmsMessage,
+        Defaulted<SmsMessage, 'id' | 'lead_id' | 'user_id' | 'twilio_sid' | 'status' | 'error' | 'read_at' | 'created_at'>,
+        Partial<SmsMessage>
+      >
       org_usage: Table<OrgUsage, Defaulted<OrgUsage, 'leads_found' | 'ai_leads' | 'call_seconds' | 'bonus_leads' | 'bonus_ai_leads' | 'bonus_call_seconds'>, Partial<OrgUsage>>
       mail_accounts: Table<MailAccount, Defaulted<MailAccount, 'provider' | 'smtp_port' | 'imap_port' | 'sender_name' | 'sender_title' | 'postal_address' | 'verified_at' | 'updated_at'>, Partial<MailAccount>>
       sales_profiles: Table<SalesProfile, Defaulted<SalesProfile, 'website' | 'description' | 'services' | 'booking_url' | 'sender_name' | 'sender_title' | 'postal_address' | 'updated_at'>, Partial<SalesProfile>>

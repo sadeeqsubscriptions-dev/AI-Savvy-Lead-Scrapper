@@ -8,6 +8,7 @@ import {
   Globe,
   Mail,
   MapPin,
+  MessageSquare,
   Pencil,
   Phone,
   Sparkles,
@@ -151,7 +152,7 @@ export function LeadDrawer({
       </div>
 
       <div className="space-y-6 p-5">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <a
             href={lead.email ? `mailto:${lead.email}` : undefined}
             aria-disabled={!lead.email}
@@ -176,6 +177,17 @@ export function LeadDrawer({
             <Phone className="size-3.5" />
             Call
           </a>
+          <Link
+            href={lead.phone ? `/sms?to=${encodeURIComponent(lead.phone)}&lead=${lead.id}` : '#'}
+            aria-disabled={!lead.phone}
+            className={cn(
+              'flex items-center justify-center gap-2 rounded-lg border border-border py-2 text-xs transition-colors',
+              lead.phone ? 'hover:bg-secondary' : 'pointer-events-none opacity-40',
+            )}
+          >
+            <MessageSquare className="size-3.5" />
+            Text
+          </Link>
         </div>
 
         <Link href={`/targeting/${lead.id}`} className={cn(buttonVariants({ variant: 'brand', size: 'sm' }), 'w-full')}>

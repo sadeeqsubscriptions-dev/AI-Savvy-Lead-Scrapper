@@ -14,6 +14,7 @@ import {
   LogOut,
   Mail,
   Menu,
+  MessageSquare,
   Moon,
   Phone,
   Settings,
@@ -42,6 +43,7 @@ const workspaceNav = [
   { href: '/outreach', label: 'Outreach', icon: Mail },
   { href: '/status', label: 'Status', icon: Activity },
   { href: '/dialer', label: 'Dialer', icon: Phone },
+  { href: '/sms', label: 'SMS', icon: MessageSquare },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },
 ]
 
