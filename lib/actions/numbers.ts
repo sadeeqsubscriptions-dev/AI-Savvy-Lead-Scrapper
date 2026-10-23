@@ -151,6 +151,28 @@ export async function renameNumber(numberId: string, name: string): Promise<Done
   return { ok: true, message: 'Number renamed.' }
 }
 
+/**
+ * Whether calls to this number pop up in the browser. The number's own
+ * assignee can decide for themselves; admins can decide for anyone.
+ */
+export async function setRingInApp(numberId: string, on: boolean): Promise<Done> {
+  const session = await requireSession()
+  const number = await ownedNumber(numberId, session.organization.id)
+  if (!number) return { ok: false, error: 'Number not found.' }
+  if (!isAdmin(session.role) && number.assigned_to !== session.userId) {
+    return { ok: false, error: 'Only the person using this number or an admin can change this.' }
+  }
+
+  const { error } = await createAdminClient()
+    .from('phone_numbers')
+    .update({ ring_in_app: on, updated_at: new Date().toISOString() })
+    .eq('id', numberId)
+  if (error) return { ok: false, error: error.message }
+  refresh()
+  revalidatePath('/', 'layout')
+  return { ok: true, message: on ? 'Incoming calls will ring in the app.' : 'Incoming calls will no longer ring in the app.' }
+}
+
 /** Gives the number to one teammate (or nobody): their calls and texts use it. */
 export async function assignNumber(numberId: string, userId: string | null): Promise<Done> {
   const gate = await numbersAdmin()

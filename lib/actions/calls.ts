@@ -73,6 +73,7 @@ export async function incomingCallToken() {
   if (!voiceConfigured()) return { ok: false as const, error: 'Calling is not set up.' }
   const own = await numberFor(session.organization.id, session.userId)
   if (!own || own.assigned_to !== session.userId || !own.voice) return { ok: false as const, error: 'No number assigned to you.' }
+  if (!own.ring_in_app) return { ok: false as const, error: 'Incoming calls are switched off for this number.' }
   return { ok: true as const, token: voiceToken(session.userId), number: own.phone_number }
 }
 

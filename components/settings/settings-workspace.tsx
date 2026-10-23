@@ -21,6 +21,7 @@ import {
   updateProfile,
 } from '@/lib/actions/settings'
 import { signOut } from '@/lib/actions/auth'
+import { setRingInApp } from '@/lib/actions/numbers'
 import type { ActionState } from '@/lib/actions/state'
 import type { ProviderOption } from '@/lib/scraper/registry'
 import { formatDate, formatNumber, formatPhone } from '@/lib/format'
@@ -31,7 +32,7 @@ import { SubmitButton } from '@/components/auth/submit-button'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, SectionHeading } from '@/components/ui/card'
-import { Field, Input, Select } from '@/components/ui/field'
+import { Field, Input, Select, Switch } from '@/components/ui/field'
 import { Progress, Spinner } from '@/components/ui/progress'
 import { toast } from '@/components/ui/toaster'
 import { cn } from '@/lib/utils'
@@ -52,6 +53,8 @@ export type WorkspaceIntegrations = {
   fallbackSender: string | null
   oauth: OAuthOptions
   phoneNumber: string | null
+  /** The number assigned to the signed-in person, with their incoming-call choice. */
+  ownLine: { id: string; ringInApp: boolean } | null
   planName: string
   callingIncluded: boolean
   salesProfile: { companyName: string; services: number } | null
@@ -422,6 +425,24 @@ function IntegrationsPanel({
     error: searchParams.get('mail_error') ?? undefined,
   }
   const sender = integrations.mailbox?.email ?? integrations.fallbackSender
+  const router = useRouter()
+  const [ringPending, startRing] = useTransition()
+  const [ringInApp, setRingInAppState] = useState(integrations.ownLine?.ringInApp ?? true)
+
+  const toggleRing = (on: boolean) => {
+    if (!integrations.ownLine) return
+    setRingInAppState(on)
+    startRing(async () => {
+      const result = await setRingInApp(integrations.ownLine!.id, on)
+      if (!result.ok) {
+        toast.error(result.error)
+        setRingInAppState(!on)
+        return
+      }
+      if ('message' in result) toast.success(result.message)
+      router.refresh()
+    })
+  }
 
   return (
     <div className="space-y-5">
@@ -472,7 +493,23 @@ function IntegrationsPanel({
           />
           <div className="px-5 pb-5">
             {integrations.phoneNumber ? (
-              <p className="font-mono text-xl font-semibold tracking-tight">{formatPhone(integrations.phoneNumber)}</p>
+              <div className="space-y-4">
+                <p className="font-mono text-xl font-semibold tracking-tight">{formatPhone(integrations.phoneNumber)}</p>
+                {integrations.ownLine ? (
+                  <div className={cn('rounded-lg border border-border p-3', ringPending && 'opacity-60')}>
+                    <Switch
+                      label="Ring incoming calls in the app"
+                      description={
+                        ringInApp
+                          ? 'Calls to your number pop up on whatever page you have open (and on your mobile if it is on your profile).'
+                          : 'Calls to your number only go to the mobile on your profile; the app stays quiet.'
+                      }
+                      checked={ringInApp}
+                      onCheckedChange={toggleRing}
+                    />
+                  </div>
+                ) : null}
+              </div>
             ) : integrations.callingIncluded ? (
               <p className="text-sm text-muted-foreground">Your number is being assigned. It appears here within a minute.</p>
             ) : (

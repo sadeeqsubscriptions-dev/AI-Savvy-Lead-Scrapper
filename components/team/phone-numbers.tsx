@@ -4,14 +4,14 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { Link2, MessageSquare, Pencil, Phone, PhoneForwarded, Trash2 } from 'lucide-react'
-import { assignNumber, attachExistingNumber, buyNumber, removeNumber, renameNumber } from '@/lib/actions/numbers'
+import { assignNumber, attachExistingNumber, buyNumber, removeNumber, renameNumber, setRingInApp } from '@/lib/actions/numbers'
 import { PHONE_NUMBER_PRICE } from '@/lib/billing/plans'
 import { formatPhone } from '@/lib/phone'
 import type { PhoneNumberSource } from '@/lib/supabase/types'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardHeader, EmptyState } from '@/components/ui/card'
-import { Field, Input, Select } from '@/components/ui/field'
+import { Field, Input, Select, Switch } from '@/components/ui/field'
 import { Modal } from '@/components/ui/modal'
 import { toast } from '@/components/ui/toaster'
 
@@ -25,6 +25,7 @@ export type PhoneNumberRow = {
   sms: boolean
   voice: boolean
   configured: boolean
+  ringInApp: boolean
   /** Why the app couldn't wire it up in Twilio yet. */
   problem: string | null
 }
@@ -99,6 +100,12 @@ export function PhoneNumbers({
     if (!renaming) return
     startTransition(async () => {
       if (done(await renameNumber(renaming.id, form.name))) setRenaming(null)
+    })
+  }
+
+  const toggleRing = (id: string, on: boolean) => {
+    startTransition(async () => {
+      done(await setRingInApp(id, on))
     })
   }
 
@@ -184,6 +191,7 @@ export function PhoneNumbers({
                 <th className="px-4 py-3 font-medium">Used by</th>
                 <th className="px-4 py-3 font-medium">Type</th>
                 <th className="px-4 py-3 font-medium">Can do</th>
+                <th className="px-4 py-3 font-medium">Incoming calls</th>
                 {isAdmin ? <th className="w-24 px-4 py-3" /> : null}
               </tr>
             </thead>
@@ -235,6 +243,17 @@ export function PhoneNumbers({
                           </span>
                         ) : null}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {isAdmin || number.assignedTo === currentUserId ? (
+                        <Switch
+                          label={number.ringInApp ? 'Rings in the app' : 'Mobile only'}
+                          checked={number.ringInApp}
+                          onCheckedChange={(on) => toggleRing(number.id, on)}
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{number.ringInApp ? 'Rings in the app' : 'Mobile only'}</span>
+                      )}
                     </td>
                     {isAdmin ? (
                       <td className="px-4 py-3">

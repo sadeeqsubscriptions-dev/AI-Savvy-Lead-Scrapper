@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
     voiceConfigured() && hasAdminCredentials() ? numberFor(session.organization.id, session.userId) : Promise.resolve(null),
   ])
   // Teammates with their own number get rung in the browser when it's called.
-  const receivesCalls = Boolean(ownNumber && ownNumber.assigned_to === session.userId && ownNumber.voice)
+  const receivesCalls = Boolean(ownNumber && ownNumber.assigned_to === session.userId && ownNumber.voice && ownNumber.ring_in_app)
   const { plan, usage, bonus, remaining } = entitlements
   const paid = plan.price > 0
 

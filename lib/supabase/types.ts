@@ -294,6 +294,8 @@ export type PhoneNumber = Timestamps & {
   monthly_price_cents: number
   voice: boolean
   sms: boolean
+  /** Pop the incoming-call card in the assignee's browser when this number is called. */
+  ring_in_app: boolean
   configured_at: string | null
 }
 
@@ -520,7 +522,7 @@ export type Database = {
         Defaulted<
           PhoneNumber,
           | 'id' | 'twilio_sid' | 'friendly_name' | 'assigned_to' | 'source' | 'stripe_subscription_id'
-          | 'monthly_price_cents' | 'voice' | 'sms' | 'configured_at' | 'created_at' | 'updated_at'
+          | 'monthly_price_cents' | 'voice' | 'sms' | 'ring_in_app' | 'configured_at' | 'created_at' | 'updated_at'
         >,
         Partial<PhoneNumber>
       >

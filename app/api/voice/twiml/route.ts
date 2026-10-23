@@ -45,7 +45,8 @@ export async function POST(request: Request) {
       ? await supabase.from('profiles').select('phone').eq('id', number.assigned_to).maybeSingle()
       : { data: null }
     const mobile = owner?.phone ? toE164(owner.phone) : null
-    if (!number.assigned_to && !mobile) {
+    const ringBrowser = Boolean(number.assigned_to && number.ring_in_app)
+    if (!ringBrowser && !mobile) {
       return reject('Thanks for calling. Nobody can pick up right now; please send a text to this number and we will get back to you.')
     }
 
@@ -82,7 +83,7 @@ export async function POST(request: Request) {
       answerOnBridge: true,
       action: `${base}/api/voice/status?callId=${call?.id ?? ''}&inbound=1`,
     })
-    if (number.assigned_to) dial.client(number.assigned_to)
+    if (ringBrowser) dial.client(number.assigned_to!)
     if (mobile) dial.number(mobile)
     return twiml(response.toString())
   }

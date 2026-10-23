@@ -7,7 +7,7 @@ import { oauthConfigured } from '@/lib/outreach/oauth'
 import { listProviders } from '@/lib/scraper/registry'
 import { createAdminClient, hasAdminCredentials } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { callerIdFor } from '@/lib/voice/numbers'
+import { callerIdFor, numberFor } from '@/lib/voice/numbers'
 
 export const metadata: Metadata = { title: 'Settings' }
 
@@ -31,6 +31,7 @@ export default async function SettingsPage() {
     supabase.from('sales_profiles').select('company_name, services').eq('org_id', orgId).maybeSingle(),
     callerIdFor(orgId, session.userId),
   ])
+  const own = hasAdminCredentials() ? await numberFor(orgId, session.userId) : null
 
   const internal = entitlements.plan.id === 'internal'
   const integrations: WorkspaceIntegrations = {
@@ -39,6 +40,7 @@ export default async function SettingsPage() {
     fallbackSender: internal ? (envMailbox()?.user ?? null) : null,
     oauth: { google: oauthConfigured('google'), microsoft: oauthConfigured('microsoft') },
     phoneNumber,
+    ownLine: own && own.assigned_to === session.userId ? { id: own.id, ringInApp: own.ring_in_app } : null,
     planName: entitlements.plan.name,
     callingIncluded: entitlements.plan.features.calling,
     salesProfile: profile.data?.company_name
