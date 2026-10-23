@@ -247,12 +247,12 @@ export function PhoneNumbers({
                     <td className="px-4 py-3">
                       {isAdmin || number.assignedTo === currentUserId ? (
                         <Switch
-                          label={number.ringInApp ? 'Rings in the app' : 'Mobile only'}
+                          label={number.ringInApp ? 'Accepted' : 'Off · outbound only'}
                           checked={number.ringInApp}
                           onCheckedChange={(on) => toggleRing(number.id, on)}
                         />
                       ) : (
-                        <span className="text-xs text-muted-foreground">{number.ringInApp ? 'Rings in the app' : 'Mobile only'}</span>
+                        <span className="text-xs text-muted-foreground">{number.ringInApp ? 'Accepted' : 'Off · outbound only'}</span>
                       )}
                     </td>
                     {isAdmin ? (

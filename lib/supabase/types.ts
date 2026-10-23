@@ -294,7 +294,10 @@ export type PhoneNumber = Timestamps & {
   monthly_price_cents: number
   voice: boolean
   sms: boolean
-  /** Pop the incoming-call card in the assignee's browser when this number is called. */
+  /**
+   * Accepts incoming calls (rings the assignee's browser and mobile). Off =
+   * outbound only: calls and texts go out from it, callers are asked to text.
+   */
   ring_in_app: boolean
   configured_at: string | null
 }

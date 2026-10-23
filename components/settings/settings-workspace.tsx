@@ -498,11 +498,11 @@ function IntegrationsPanel({
                 {integrations.ownLine ? (
                   <div className={cn('rounded-lg border border-border p-3', ringPending && 'opacity-60')}>
                     <Switch
-                      label="Ring incoming calls in the app"
+                      label="Accept incoming calls"
                       description={
                         ringInApp
-                          ? 'Calls to your number pop up on whatever page you have open (and on your mobile if it is on your profile).'
-                          : 'Calls to your number only go to the mobile on your profile; the app stays quiet.'
+                          ? 'Calls to your number ring in the app on whatever page you have open, and on your mobile if it is on your profile.'
+                          : 'Outbound only: you can still call and text from this number, but anyone who calls it hears a message asking them to text.'
                       }
                       checked={ringInApp}
                       onCheckedChange={toggleRing}

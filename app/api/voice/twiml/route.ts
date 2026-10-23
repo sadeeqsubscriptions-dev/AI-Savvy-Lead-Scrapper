@@ -44,8 +44,12 @@ export async function POST(request: Request) {
     const { data: owner } = number.assigned_to
       ? await supabase.from('profiles').select('phone').eq('id', number.assigned_to).maybeSingle()
       : { data: null }
+    // Outbound-only numbers take no calls at all; the caller is asked to text instead.
+    if (!number.ring_in_app) {
+      return reject('This number does not take incoming calls. Please send a text to this number and we will get back to you.')
+    }
     const mobile = owner?.phone ? toE164(owner.phone) : null
-    const ringBrowser = Boolean(number.assigned_to && number.ring_in_app)
+    const ringBrowser = Boolean(number.assigned_to)
     if (!ringBrowser && !mobile) {
       return reject('Thanks for calling. Nobody can pick up right now; please send a text to this number and we will get back to you.')
     }

@@ -152,8 +152,8 @@ export async function renameNumber(numberId: string, name: string): Promise<Done
 }
 
 /**
- * Whether calls to this number pop up in the browser. The number's own
- * assignee can decide for themselves; admins can decide for anyone.
+ * Whether this number takes incoming calls at all (off = outbound only).
+ * The number's own assignee can decide for themselves; admins for anyone.
  */
 export async function setRingInApp(numberId: string, on: boolean): Promise<Done> {
   const session = await requireSession()
@@ -170,7 +170,12 @@ export async function setRingInApp(numberId: string, on: boolean): Promise<Done>
   if (error) return { ok: false, error: error.message }
   refresh()
   revalidatePath('/', 'layout')
-  return { ok: true, message: on ? 'Incoming calls will ring in the app.' : 'Incoming calls will no longer ring in the app.' }
+  return {
+    ok: true,
+    message: on
+      ? 'This number now takes incoming calls.'
+      : 'This number is now outbound only: callers are asked to text instead.',
+  }
 }
 
 /** Gives the number to one teammate (or nobody): their calls and texts use it. */
