@@ -18,7 +18,7 @@ import { Badge, leadStatusColor } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, EmptyState } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { requireSession } from '@/lib/auth'
+import { requirePage } from '@/lib/auth'
 import { autopilotCandidates, dailyPlan, sentToday } from '@/lib/outreach/engine'
 import { createClient } from '@/lib/supabase/server'
 import { LEAD_STATUSES } from '@/lib/constants'
@@ -35,7 +35,7 @@ import {
 export const metadata: Metadata = { title: 'Dashboard' }
 
 export default async function DashboardPage() {
-  const session = await requireSession()
+  const session = await requirePage('dashboard')
   const orgId = session.organization.id
 
   const supabase = await createClient()

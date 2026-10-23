@@ -226,7 +226,7 @@ export async function getMembers(orgId: string) {
   const supabase = await createClient()
   const { data } = await supabase
     .from('organization_members')
-    .select('id, role, created_at, user_id, profile:profiles(id, full_name, email, avatar_url, job_title)')
+    .select('id, role, page_access, created_at, user_id, profile:profiles(id, full_name, email, avatar_url, job_title)')
     .eq('org_id', orgId)
     .order('created_at')
 
@@ -234,6 +234,7 @@ export async function getMembers(orgId: string) {
     (data as unknown as {
       id: string
       role: import('@/lib/supabase/types').MemberRole
+      page_access: string[] | null
       created_at: string
       user_id: string
       profile: Pick<Profile, 'id' | 'full_name' | 'email' | 'avatar_url' | 'job_title'> | null

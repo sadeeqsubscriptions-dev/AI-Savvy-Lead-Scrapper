@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { isAdmin, requireSession } from '@/lib/auth'
+import { isAdmin, requirePage } from '@/lib/auth'
 import { getEntitlements } from '@/lib/billing/entitlements'
 import { oauthConfigured } from '@/lib/outreach/oauth'
 import { createAdminClient, hasAdminCredentials } from '@/lib/supabase/admin'
@@ -16,7 +16,7 @@ export default async function SetupPage({
   searchParams: Promise<{ mail_connected?: string; mail_error?: string }>
 }) {
   const params = await searchParams
-  const session = await requireSession()
+  const session = await requirePage('setup')
   const orgId = session.organization.id
   const supabase = await createClient()
 

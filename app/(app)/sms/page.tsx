@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { SmsWorkspace, type SmsNumberOption } from '@/components/sms/sms-workspace'
-import { canWrite, isAdmin, requireSession } from '@/lib/auth'
+import { canWrite, isAdmin, requirePage } from '@/lib/auth'
 import { toE164 } from '@/lib/phone'
 import type { SmsMessageWithLead } from '@/lib/sms/shape'
 import { createAdminClient, hasAdminCredentials } from '@/lib/supabase/admin'
@@ -14,7 +14,7 @@ export default async function SmsPage({
 }: {
   searchParams: Promise<{ number?: string; with?: string; to?: string; lead?: string }>
 }) {
-  const [params, session] = await Promise.all([searchParams, requireSession()])
+  const [params, session] = await Promise.all([searchParams, requirePage('sms')])
   const orgId = session.organization.id
   const supabase = await createClient()
 

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { TeamWorkspace, type MemberRow } from '@/components/team/team-workspace'
-import { isAdmin, requireSession } from '@/lib/auth'
+import { isAdmin, requirePage } from '@/lib/auth'
 import { getEntitlements } from '@/lib/billing/entitlements'
 import { getInvitations, getMembers, getTeamPerformance } from '@/lib/queries'
 import { hasAdminCredentials } from '@/lib/supabase/admin'
@@ -10,7 +10,7 @@ import type { PhoneNumberRow } from '@/components/team/phone-numbers'
 export const metadata: Metadata = { title: 'Team' }
 
 export default async function TeamPage({ searchParams }: { searchParams: Promise<{ number?: string }> }) {
-  const session = await requireSession()
+  const session = await requirePage('team')
   const admin = isAdmin(session.role)
 
   const [members, performance, invitations, entitlements, numbers, params] = await Promise.all([
@@ -42,6 +42,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
     role: member.role,
     jobTitle: member.profile?.job_title ?? null,
     joinedAt: member.created_at,
+    pageAccess: member.page_access,
   }))
 
   return (

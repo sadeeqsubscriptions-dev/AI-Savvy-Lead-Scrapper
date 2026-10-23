@@ -30,6 +30,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
         email: session.email,
         role: session.role,
       }}
+      pages={session.pages}
       organization={{ id: session.organization.id, name: session.organization.name }}
       usage={{
         plan: plan.name,

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { PlanNotice } from '@/components/billing/plan-notice'
-import { canWrite, requireSession } from '@/lib/auth'
+import { canWrite, requirePage } from '@/lib/auth'
 import { TOTAL_STEPS } from '@/lib/outreach/config'
 import { dailyPlan, estimateUpNext, sentToday } from '@/lib/outreach/engine'
 import { followUpEta, leadTimezone } from '@/lib/outreach/schedule'
@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: 'Outreach' }
 export const maxDuration = 300
 
 export default async function OutreachPage() {
-  const session = await requireSession()
+  const session = await requirePage('outreach')
   const supabase = await createClient()
 
   const [{ leads, threads }, newToday, settings, etas, mailbox, pace] = await Promise.all([

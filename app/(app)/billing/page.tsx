@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { isAdmin, requireSession } from '@/lib/auth'
+import { isAdmin, requirePage } from '@/lib/auth'
 import { getEntitlements, seatsLeft } from '@/lib/billing/entitlements'
 import { stripeConfigured } from '@/lib/billing/stripe'
 import { callerIdFor } from '@/lib/voice/numbers'
@@ -12,7 +12,7 @@ export default async function BillingPage({
 }: {
   searchParams: Promise<{ welcome?: string; topup?: string }>
 }) {
-  const session = await requireSession()
+  const session = await requirePage('billing')
   const orgId = session.organization.id
   const [params, entitlements, seats, phoneNumber] = await Promise.all([
     searchParams,

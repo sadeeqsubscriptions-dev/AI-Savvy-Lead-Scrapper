@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { currentBrief } from '@/lib/ai/brief-shape'
-import { canWrite, requireSession } from '@/lib/auth'
+import { canWrite, requirePage } from '@/lib/auth'
 import { mailboxFor } from '@/lib/outreach/mailbox'
 import { leadTimezone } from '@/lib/outreach/schedule'
 import { createClient } from '@/lib/supabase/server'
@@ -16,7 +16,7 @@ export const maxDuration = 300
 
 export default async function CallPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const session = await requireSession()
+  const session = await requirePage('dialer')
   const supabase = await createClient()
 
   const { data: lead } = await supabase

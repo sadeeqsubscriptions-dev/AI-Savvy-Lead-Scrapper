@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { cache } from 'react'
+import { allowedPages, canSeePage, homeFor, type PageId } from '@/lib/access'
 import { createClient } from '@/lib/supabase/server'
 import type { MemberRole, Organization, Profile } from '@/lib/supabase/types'
 
@@ -9,6 +10,8 @@ export type Session = {
   profile: Profile
   organization: Organization
   role: MemberRole
+  /** Pages this person may open; admins get all of them. */
+  pages: PageId[]
 }
 
 /**
@@ -29,7 +32,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
     supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
     supabase
       .from('organization_members')
-      .select('role, organizations(*)')
+      .select('role, page_access, organizations(*)')
       .eq('user_id', user.id)
       .order('created_at')
       .limit(1)
@@ -46,8 +49,19 @@ export const getSession = cache(async (): Promise<Session | null> => {
     profile,
     organization,
     role: membership!.role,
+    pages: allowedPages(membership!.role, membership!.page_access),
   }
 })
+
+/**
+ * Guards a page by what the admin allowed this person to see. Someone who
+ * opens a page they can't use lands on the first page they can.
+ */
+export async function requirePage(page: PageId): Promise<Session> {
+  const session = await requireSession()
+  if (!canSeePage(session.role, session.pages, page)) redirect(homeFor(session.role, session.pages))
+  return session
+}
 
 /** Guards an authenticated page. Redirects to login, or onboarding if the user has no workspace. */
 export async function requireSession(): Promise<Session> {

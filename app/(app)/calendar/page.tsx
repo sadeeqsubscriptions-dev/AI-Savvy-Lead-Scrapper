@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { CalendarWorkspace } from '@/components/calendar/calendar-workspace'
-import { canWrite, requireSession } from '@/lib/auth'
+import { canWrite, requirePage } from '@/lib/auth'
 import { getMeetings, getUpcomingMeetings } from '@/lib/queries'
 import { createClient } from '@/lib/supabase/server'
 
@@ -26,7 +26,7 @@ export default async function CalendarPage({
 }: {
   searchParams: Promise<{ month?: string }>
 }) {
-  const session = await requireSession()
+  const session = await requirePage('calendar')
   const { month: monthParam } = await searchParams
   const { year, month } = resolveMonth(monthParam)
 

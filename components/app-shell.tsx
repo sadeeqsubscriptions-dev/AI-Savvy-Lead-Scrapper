@@ -30,27 +30,31 @@ import { useTheme } from '@/components/theme-provider'
 import { Avatar } from '@/components/ui/avatar'
 import { Progress } from '@/components/ui/progress'
 import { signOut } from '@/lib/actions/auth'
+import type { PageId } from '@/lib/access'
 import { APP_NAME } from '@/lib/constants'
 import { formatNumber } from '@/lib/format'
 import type { MemberRole } from '@/lib/supabase/types'
 import { cn } from '@/lib/utils'
 
-const workspaceNav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/scraper', label: 'Lead scraper', icon: FileSearch },
-  { href: '/crm', label: 'CRM', icon: Database },
-  { href: '/targeting', label: 'Targeting', icon: Crosshair },
-  { href: '/outreach', label: 'Outreach', icon: Mail },
-  { href: '/status', label: 'Status', icon: Activity },
-  { href: '/dialer', label: 'Dialer', icon: Phone },
-  { href: '/sms', label: 'SMS', icon: MessageSquare },
-  { href: '/calendar', label: 'Calendar', icon: CalendarDays },
+type NavItem = { href: string; label: string; icon: typeof Database; page?: PageId }
+
+const workspaceNav: NavItem[] = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
+  { href: '/scraper', label: 'Lead scraper', icon: FileSearch, page: 'scraper' },
+  { href: '/crm', label: 'CRM', icon: Database, page: 'crm' },
+  { href: '/targeting', label: 'Targeting', icon: Crosshair, page: 'targeting' },
+  { href: '/outreach', label: 'Outreach', icon: Mail, page: 'outreach' },
+  { href: '/status', label: 'Status', icon: Activity, page: 'status' },
+  { href: '/dialer', label: 'Dialer', icon: Phone, page: 'dialer' },
+  { href: '/sms', label: 'SMS', icon: MessageSquare, page: 'sms' },
+  { href: '/calendar', label: 'Calendar', icon: CalendarDays, page: 'calendar' },
 ]
 
-const manageNav = [
-  { href: '/setup', label: 'Sales setup', icon: SlidersHorizontal },
-  { href: '/team', label: 'Team', icon: Users },
-  { href: '/billing', label: 'Plan & billing', icon: CreditCard },
+const manageNav: NavItem[] = [
+  { href: '/setup', label: 'Sales setup', icon: SlidersHorizontal, page: 'setup' },
+  { href: '/team', label: 'Team', icon: Users, page: 'team' },
+  { href: '/billing', label: 'Plan & billing', icon: CreditCard, page: 'billing' },
+  // Settings (own profile) is open to everyone.
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
@@ -64,11 +68,14 @@ const roleLabels: Record<MemberRole, string> = {
 export function AppShell({
   children,
   user,
+  pages,
   organization,
   usage,
 }: {
   children: React.ReactNode
   user: { id: string; name: string; email: string; role: MemberRole }
+  /** Pages this person may open; the rest are left out of the sidebar. */
+  pages: PageId[]
   organization: { id: string; name: string }
   usage: {
     plan: string
@@ -88,11 +95,9 @@ export function AppShell({
   }, [pathname])
 
   const percent = usage.leadsCap > 0 ? Math.min(100, (usage.leadsUsed / usage.leadsCap) * 100) : 0
+  const visible = (items: NavItem[]) => items.filter((item) => !item.page || pages.includes(item.page))
 
-  const navLink = (
-    item: { href: string; label: string; icon: typeof Database },
-    variant: 'primary' | 'muted',
-  ) => {
+  const navLink = (item: NavItem, variant: 'primary' | 'muted') => {
     const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
     const Icon = item.icon
 
@@ -150,14 +155,14 @@ export function AppShell({
             Workspace
           </p>
           <nav className="flex flex-col gap-1" aria-label="Workspace navigation">
-            {workspaceNav.map((item) => navLink(item, 'primary'))}
+            {visible(workspaceNav).map((item) => navLink(item, 'primary'))}
           </nav>
 
           <p className="mb-2 mt-7 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground [@media(max-height:860px)]:mt-4">
             Manage
           </p>
           <nav className="flex flex-col gap-1" aria-label="Management navigation">
-            {manageNav.map((item) => navLink(item, 'muted'))}
+            {visible(manageNav).map((item) => navLink(item, 'muted'))}
           </nav>
         </div>
 

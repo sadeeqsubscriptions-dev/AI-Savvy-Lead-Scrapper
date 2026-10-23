@@ -2,9 +2,10 @@
 
 import { useRouter } from 'next/navigation'
 import { useActionState, useEffect, useState, useTransition } from 'react'
-import { Copy, Mail, Trash2, UserPlus, Users } from 'lucide-react'
-import { inviteMember, removeMember, revokeInvitation, updateMemberRole } from '@/lib/actions/team'
+import { Copy, KeyRound, Mail, Trash2, UserPlus, Users } from 'lucide-react'
+import { inviteMember, removeMember, revokeInvitation, updateMemberAccess, updateMemberRole } from '@/lib/actions/team'
 import type { ActionState } from '@/lib/actions/state'
+import { PAGES, allowedPages, type PageId } from '@/lib/access'
 import { MEMBER_ROLES } from '@/lib/constants'
 import { formatCurrency, formatDate, formatNumber, formatPercent } from '@/lib/format'
 import type { Invitation, MemberRole, TeamPerformanceRow } from '@/lib/supabase/types'
@@ -14,7 +15,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, EmptyState, SectionHeading } from '@/components/ui/card'
-import { Field, Input, Select } from '@/components/ui/field'
+import { Field, Input, Select, Switch } from '@/components/ui/field'
 import { Modal } from '@/components/ui/modal'
 import { Progress } from '@/components/ui/progress'
 import { toast } from '@/components/ui/toaster'
@@ -27,6 +28,8 @@ export type MemberRow = {
   role: MemberRole
   jobTitle: string | null
   joinedAt: string
+  /** Pages an admin picked for them; null = the default set. */
+  pageAccess: string[] | null
 }
 
 const roleTone: Record<MemberRole, 'brand' | 'violet' | 'neutral' | 'outline'> = {
@@ -57,6 +60,7 @@ export function TeamWorkspace({
 }) {
   const router = useRouter()
   const [inviting, setInviting] = useState(false)
+  const [access, setAccess] = useState<{ member: MemberRow; pages: PageId[] } | null>(null)
   const [pending, startTransition] = useTransition()
   const [state, formAction] = useActionState<ActionState, FormData>(inviteMember, {})
 
@@ -96,6 +100,23 @@ export function TeamWorkspace({
       if (result.error) toast.error(result.error)
       else {
         toast.success(result.message!)
+        router.refresh()
+      }
+    })
+  }
+
+  const openAccess = (member: MemberRow) => {
+    setAccess({ member, pages: allowedPages(member.role, member.pageAccess) })
+  }
+
+  const saveAccess = () => {
+    if (!access) return
+    startTransition(async () => {
+      const result = await updateMemberAccess(access.member.userId, access.pages)
+      if (result.error) toast.error(result.error)
+      else {
+        toast.success(result.message!)
+        setAccess(null)
         router.refresh()
       }
     })
@@ -254,6 +275,19 @@ export function TeamWorkspace({
                     </td>
                     {isAdmin ? (
                       <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                        {!isSelf && member.role !== 'owner' && member.role !== 'admin' ? (
+                          <button
+                            type="button"
+                            onClick={() => openAccess(member)}
+                            disabled={pending}
+                            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                            aria-label={`Page access for ${member.name}`}
+                            title="Page access"
+                          >
+                            <KeyRound className="size-3.5" />
+                          </button>
+                        ) : null}
                         {!isSelf ? (
                           <button
                             type="button"
@@ -265,6 +299,7 @@ export function TeamWorkspace({
                             <Trash2 className="size-3.5" />
                           </button>
                         ) : null}
+                        </div>
                       </td>
                     ) : null}
                   </tr>
@@ -339,6 +374,44 @@ export function TeamWorkspace({
           )}
         </Card>
       ) : null}
+
+      <Modal
+        open={Boolean(access)}
+        onClose={() => setAccess(null)}
+        title={access ? `Page access for ${access.member.name}` : 'Page access'}
+        description="Pages switched off disappear from their sidebar and can't be opened. Settings (their own profile) is always available."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setAccess(null)}>
+              Cancel
+            </Button>
+            <Button variant="brand" onClick={saveAccess} disabled={pending}>
+              Save access
+            </Button>
+          </>
+        }
+      >
+        {access ? (
+          <div className="divide-y divide-border">
+            {PAGES.map((page) => (
+              <div key={page.id} className="py-3 first:pt-0 last:pb-0">
+                <Switch
+                  label={page.label}
+                  description={page.description}
+                  checked={access.pages.includes(page.id)}
+                  onCheckedChange={(on) =>
+                    setAccess((current) =>
+                      current
+                        ? { ...current, pages: on ? [...current.pages, page.id] : current.pages.filter((id) => id !== page.id) }
+                        : current,
+                    )
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         open={inviting}

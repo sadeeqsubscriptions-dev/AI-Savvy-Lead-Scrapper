@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { PlanNotice } from '@/components/billing/plan-notice'
 import { redirect } from 'next/navigation'
-import { requireSession } from '@/lib/auth'
+import { requirePage } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { missingVoiceSettings, voiceConfigured } from '@/lib/voice/twilio'
 import { DialerList, type DialerListLead } from '@/components/dialer/dialer-list'
@@ -13,7 +13,7 @@ export default async function DialerPage({ searchParams }: { searchParams: Promi
   // Old links (/dialer?lead=…) go straight to the lead's call page.
   if (lead) redirect(`/dialer/${lead}`)
 
-  const session = await requireSession()
+  const session = await requirePage('dialer')
   const supabase = await createClient()
   const { data } = await supabase
     .from('leads')

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+import { isPageId } from '@/lib/access'
 import { isAdmin, requireSession } from '@/lib/auth'
 import { seatsLeft } from '@/lib/billing/entitlements'
 import { createClient } from '@/lib/supabase/server'
@@ -98,6 +99,26 @@ export async function updateMemberRole(userId: string, role: MemberRole) {
 
   revalidatePath('/team')
   return { ok: true, message: 'Role updated.' }
+}
+
+/** Which pages a member or viewer may open. Admins always see everything. */
+export async function updateMemberAccess(userId: string, pages: string[]) {
+  const session = await requireSession()
+  if (!isAdmin(session.role)) return { error: 'Only admins can change page access.' }
+  if (userId === session.userId) return { error: 'You already see every page.' }
+
+  const chosen = pages.filter(isPageId)
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('organization_members')
+    .update({ page_access: chosen })
+    .eq('org_id', session.organization.id)
+    .eq('user_id', userId)
+
+  if (error) return { error: error.message }
+
+  revalidatePath('/team')
+  return { ok: true, message: `Access updated: ${chosen.length} page${chosen.length === 1 ? '' : 's'}.` }
 }
 
 export async function removeMember(userId: string) {

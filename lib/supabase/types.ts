@@ -56,6 +56,8 @@ export type OrganizationMember = {
   org_id: string
   user_id: string
   role: MemberRole
+  /** Pages this person may open (lib/access.ts). Null = the default set; ignored for admins. */
+  page_access: string[] | null
   created_at: string
 }
 
@@ -425,7 +427,7 @@ export type Database = {
       >
       organization_members: Table<
         OrganizationMember,
-        Defaulted<OrganizationMember, 'id' | 'role' | 'created_at'>,
+        Defaulted<OrganizationMember, 'id' | 'role' | 'page_access' | 'created_at'>,
         Partial<OrganizationMember>
       >
       invitations: Table<

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { CrmWorkspace } from '@/components/crm/crm-workspace'
-import { canWrite, requireSession } from '@/lib/auth'
+import { canWrite, requirePage } from '@/lib/auth'
 import { formatCurrency, formatNumber } from '@/lib/format'
 import {
   getAssignableMembers,
@@ -27,7 +27,7 @@ export default async function CrmPage({
 }: {
   searchParams: Promise<SearchParams>
 }) {
-  const session = await requireSession()
+  const session = await requirePage('crm')
   const params = await searchParams
   const orgId = session.organization.id
   const view = params.view === 'board' ? 'board' : 'table'

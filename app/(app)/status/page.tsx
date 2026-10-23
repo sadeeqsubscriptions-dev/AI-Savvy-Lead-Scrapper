@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { canWrite, requireSession } from '@/lib/auth'
+import { canWrite, requirePage } from '@/lib/auth'
 import { followUpEta, leadTimezone } from '@/lib/outreach/schedule'
 import { createClient } from '@/lib/supabase/server'
 import type { ActivityItem } from '@/components/leads/activity-log'
@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: 'Status' }
  * with where it stands and what happened last.
  */
 export default async function StatusPage() {
-  const session = await requireSession()
+  const session = await requirePage('status')
   const supabase = await createClient()
   const orgId = session.organization.id
 

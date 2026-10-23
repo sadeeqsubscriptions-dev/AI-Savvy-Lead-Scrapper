@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { PlanNotice } from '@/components/billing/plan-notice'
-import { isAdmin, requireSession } from '@/lib/auth'
+import { isAdmin, requirePage } from '@/lib/auth'
 import { getAssignableMembers, getLeadsByOwner } from '@/lib/queries'
 import { TargetingWorkspace } from '@/components/targeting/targeting-workspace'
 
@@ -16,7 +16,7 @@ export default async function TargetingPage({
 }: {
   searchParams: Promise<{ rep?: string }>
 }) {
-  const session = await requireSession()
+  const session = await requirePage('targeting')
   const params = await searchParams
   const admin = isAdmin(session.role)
 
